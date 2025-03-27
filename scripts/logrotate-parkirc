@@ -1,0 +1,13 @@
+/var/log/parkirc/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0640 www-data www-data
+    sharedscripts
+    postrotate
+        /usr/bin/find /var/log/parkirc/ -type f -name "*.log" -mtime +30 -delete
+        systemctl reload parkirc
+    endscript
+} 

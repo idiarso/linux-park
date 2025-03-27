@@ -11,6 +11,9 @@ using Microsoft.Extensions.Logging;
 using NLog;
 using NLog.Web;
 using System.Runtime.CompilerServices;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Hosting;
+using ParkIRC.Infrastructure.Logging;
 
 // Configurar comportamiento legacy de timestamps para Npgsql
 // Esto permite usar DateTime locales con PostgreSQL
@@ -23,6 +26,10 @@ logger.Debug("init main");
 try
 {
     var builder = WebApplication.CreateBuilder(args);
+
+    // Configure logging
+    builder.Logging.ClearProviders();
+    LoggingConfiguration.ConfigureLogging(builder.Logging, builder.Environment.EnvironmentName);
 
     // Add NLog with detailed configuration
     builder.Logging.ClearProviders();
@@ -115,6 +122,14 @@ try
     // Add Scheduled Backup Service
     builder.Services.AddHostedService<ScheduledBackupService>();
 
+    // Configure sensitive data protection
+    if (!builder.Environment.IsDevelopment())
+    {
+        builder.Services.AddDataProtection()
+            .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "keys")))
+            .SetApplicationName("ParkIRC");
+    }
+
     var app = builder.Build();
 
     // Apply pending migrations automatically
@@ -156,6 +171,18 @@ try
     {
         app.UseExceptionHandler("/Home/Error");
         app.UseHsts();
+        
+        // Custom error handler
+        app.UseStatusCodePages(async context =>
+        {
+            context.HttpContext.Response.ContentType = "application/json";
+            await context.HttpContext.Response.WriteAsync(
+                System.Text.Json.JsonSerializer.Serialize(new { 
+                    error = "An error occurred",
+                    code = context.HttpContext.Response.StatusCode
+                })
+            );
+        });
     }
 
     // Ensure database exists and can be connected
