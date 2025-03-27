@@ -91,7 +91,7 @@ namespace ParkIRC.Controllers
                     PhoneNumber = model.PhoneNumber ?? string.Empty,
                     EntryTime = DateTime.Now,
                     IsParked = true,
-                    EntryPhotoPath = photoPath ?? string.Empty,
+                    EntryImagePath = photoPath ?? string.Empty,
                     ParkingSpaceId = parkingSpace.Id,
                     ShiftId = currentShift.Id
                 };
@@ -201,7 +201,7 @@ namespace ParkIRC.Controllers
 
                 vehicle.IsParked = false;
                 vehicle.ExitTime = DateTime.Now;
-                vehicle.ExitPhotoPath = exitPhotoPath ?? string.Empty;
+                vehicle.ExitImagePath = exitPhotoPath ?? string.Empty;
 
                 // Mark ticket as used
                 ticket.IsUsed = true;

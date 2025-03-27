@@ -15,6 +15,8 @@ namespace ParkIRC.Models
             // Initialize required string properties
             VehicleNumber = string.Empty;
             VehicleType = string.Empty;
+            TicketNumber = string.Empty;
+            CreatedBy = string.Empty;
         }
         
         public int Id { get; set; }
@@ -25,6 +27,11 @@ namespace ParkIRC.Models
         [Required(ErrorMessage = "Tipe kendaraan wajib diisi")]
         public string VehicleType { get; set; }
         
+        [Required(ErrorMessage = "Nomor tiket wajib diisi")]
+        public string TicketNumber { get; set; }
+        
+        public int VehicleTypeId { get; set; }
+        
         public string? DriverName { get; set; }
         public string? PhoneNumber { get; set; }
         public string? ContactNumber { get; set; }
@@ -33,8 +40,8 @@ namespace ParkIRC.Models
         public DateTime? ExitTime { get; set; }
         public bool IsParked { get; set; }
         
-        public string? EntryPhotoPath { get; set; }
-        public string? ExitPhotoPath { get; set; }
+        public string? EntryImagePath { get; set; }
+        public string? ExitImagePath { get; set; }
         public string? BarcodeImagePath { get; set; }
         
         public int? ParkingSpaceId { get; set; }
@@ -48,5 +55,12 @@ namespace ParkIRC.Models
         
         [ForeignKey("ShiftId")]
         public virtual Shift? Shift { get; set; }
+        
+        [Required]
+        public string CreatedBy { get; set; }
+        
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
+        
+        public bool IsActive { get; set; } = true;
     }
 }

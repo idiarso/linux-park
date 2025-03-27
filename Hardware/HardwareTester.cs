@@ -3,12 +3,14 @@ using System.IO;
 using System.IO.Ports;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using AForge.Video;
-using AForge.Video.DirectShow;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Linq;
+using System.Runtime.InteropServices;
+using DirectShowLib;
+using static DirectShowLib.DsGuid;
 
-namespace SimpleParkingAdmin.Hardware
+namespace ParkIRC.Hardware
 {
     /// <summary>
     /// Utility to test hardware connections and functionality
@@ -143,21 +145,21 @@ namespace SimpleParkingAdmin.Hardware
                 int deviceIndex = int.Parse(GetIniValue(config, "Webcam", "Device_Index", "0"));
                 
                 // List available devices
-                FilterInfoCollection videoDevices = new FilterInfoCollection(FilterCategory.VideoInputDevice);
+                var videoDevices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
                 
-                if (videoDevices.Count == 0)
+                if (videoDevices.Length == 0)
                 {
                     Console.WriteLine("No video devices found!");
                     return;
                 }
                 
                 Console.WriteLine("Available video devices:");
-                for (int i = 0; i < videoDevices.Count; i++)
+                for (int i = 0; i < videoDevices.Length; i++)
                 {
                     Console.WriteLine($"{i}: {videoDevices[i].Name}");
                 }
                 
-                if (deviceIndex >= videoDevices.Count)
+                if (deviceIndex >= videoDevices.Length)
                 {
                     Console.WriteLine($"Warning: Configured device index {deviceIndex} is out of range. Using index 0.");
                     deviceIndex = 0;
@@ -165,93 +167,123 @@ namespace SimpleParkingAdmin.Hardware
                 
                 Console.WriteLine($"Using device: {videoDevices[deviceIndex].Name}");
                 
-                // Initialize video device
-                VideoCaptureDevice videoDevice = new VideoCaptureDevice(videoDevices[deviceIndex].MonikerString);
-                
-                // Get and display available resolutions
-                Console.WriteLine("Available resolutions:");
-                foreach (VideoCapabilities capability in videoDevice.VideoCapabilities)
+                // Create filter graph
+                var graphBuilder = (IFilterGraph2)new FilterGraph();
+                var mediaControl = (IMediaControl)graphBuilder;
+
+                // Add video device filter
+                var hr = graphBuilder.AddSourceFilterForMoniker(
+                    videoDevices[deviceIndex].Mon, null, videoDevices[deviceIndex].Name, out var videoDevice);
+                DsError.ThrowExceptionForHR(hr);
+
+                // Create and add sample grabber
+                var sampleGrabber = (ISampleGrabber)new SampleGrabber();
+                var sampleGrabberFilter = (IBaseFilter)sampleGrabber;
+                hr = graphBuilder.AddFilter(sampleGrabberFilter, "Sample Grabber");
+                DsError.ThrowExceptionForHR(hr);
+
+                // Set media type
+                var mediaType = new AMMediaType
                 {
-                    Console.WriteLine($"- {capability.FrameSize.Width}x{capability.FrameSize.Height} @ {capability.AverageFrameRate}fps");
-                }
-                
-                // Set resolution
-                string resolution = GetIniValue(config, "Camera", "Resolution", "640x480");
-                string[] dimensions = resolution.Split('x');
-                int targetWidth = int.Parse(dimensions[0]);
-                int targetHeight = int.Parse(dimensions[1]);
-                
-                bool resolutionSet = false;
-                foreach (VideoCapabilities capability in videoDevice.VideoCapabilities)
+                    majorType = MediaType.Video,
+                    subType = MediaSubType.RGB24,
+                    formatType = FormatType.VideoInfo
+                };
+                hr = sampleGrabber.SetMediaType(mediaType);
+                DsError.ThrowExceptionForHR(hr);
+
+                // Create null renderer
+                var nullRenderer = (IBaseFilter)new NullRenderer();
+                hr = graphBuilder.AddFilter(nullRenderer, "Null Renderer");
+                if (hr < 0)
+                    throw new Exception("Failed to add null renderer filter to graph");
+
+                // Connect filters
+                var pinOut = DsFindPin.ByDirection(videoDevice, PinDirection.Output, 0);
+                var pinIn = DsFindPin.ByDirection(sampleGrabberFilter, PinDirection.Input, 0);
+                hr = graphBuilder.Connect(pinOut, pinIn);
+                DsError.ThrowExceptionForHR(hr);
+
+                pinOut = DsFindPin.ByDirection(sampleGrabberFilter, PinDirection.Output, 0);
+                pinIn = DsFindPin.ByDirection(nullRenderer, PinDirection.Input, 0);
+                hr = graphBuilder.Connect(pinOut, pinIn);
+                DsError.ThrowExceptionForHR(hr);
+
+                // Set callback
+                hr = sampleGrabber.SetBufferSamples(true);
+                DsError.ThrowExceptionForHR(hr);
+                hr = sampleGrabber.SetOneShot(false);
+                DsError.ThrowExceptionForHR(hr);
+
+                // Start capturing
+                hr = mediaControl.Run();
+                DsError.ThrowExceptionForHR(hr);
+
+                Console.WriteLine("Capturing frames... Please wait.");
+
+                // Capture a few frames
+                for (int i = 0; i < 3; i++)
                 {
-                    if (capability.FrameSize.Width == targetWidth && capability.FrameSize.Height == targetHeight)
-                    {
-                        videoDevice.VideoResolution = capability;
-                        resolutionSet = true;
-                        Console.WriteLine($"Set resolution to {targetWidth}x{targetHeight}");
-                        break;
-                    }
-                }
-                
-                if (!resolutionSet && videoDevice.VideoCapabilities.Length > 0)
-                {
-                    videoDevice.VideoResolution = videoDevice.VideoCapabilities[0];
-                    Console.WriteLine($"Could not set requested resolution. Using {videoDevice.VideoResolution.FrameSize.Width}x{videoDevice.VideoResolution.FrameSize.Height}");
-                }
-                
-                // Capture frame
-                Console.WriteLine("Capturing test image...");
-                
-                TaskCompletionSource<Bitmap> tcs = new TaskCompletionSource<Bitmap>();
-                EventHandler<NewFrameEventArgs> frameHandler = null;
-                
-                frameHandler = (sender, e) =>
-                {
+                    // Get buffer size
+                    int bufferSize = 0;
+                    hr = sampleGrabber.GetCurrentBuffer(ref bufferSize, IntPtr.Zero);
+                    DsError.ThrowExceptionForHR(hr);
+
+                    // Allocate buffer
+                    var buffer = new byte[bufferSize];
+                    var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+                    var connectedMediaType = new AMMediaType();
                     try
                     {
-                        // Clone the frame to avoid disposal issues
-                        Bitmap bitmap = (Bitmap)e.Frame.Clone();
-                        tcs.TrySetResult(bitmap);
-                        
-                        // Remove the event handler after capturing
-                        if (videoDevice != null)
+                        // Get frame data
+                        hr = sampleGrabber.GetCurrentBuffer(ref bufferSize, handle.AddrOfPinnedObject());
+                        DsError.ThrowExceptionForHR(hr);
+
+                        // Get media type
+                        hr = sampleGrabber.GetConnectedMediaType(connectedMediaType);
+                        DsError.ThrowExceptionForHR(hr);
+
+                        var videoInfo = (VideoInfoHeader)Marshal.PtrToStructure(connectedMediaType.formatPtr, typeof(VideoInfoHeader));
+                        var width = videoInfo.BmiHeader.Width;
+                        var height = videoInfo.BmiHeader.Height;
+
+                        // Create bitmap
+                        using var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+                        var bitmapData = bitmap.LockBits(
+                            new Rectangle(0, 0, width, height),
+                            ImageLockMode.WriteOnly,
+                            PixelFormat.Format24bppRgb);
+                        try
                         {
-                            videoDevice.NewFrame -= frameHandler;
+                            Marshal.Copy(buffer, 0, bitmapData.Scan0, buffer.Length);
                         }
+                        finally
+                        {
+                            bitmap.UnlockBits(bitmapData);
+                        }
+
+                        // Save test image
+                        string filename = Path.Combine(TestImagePath, $"test_frame_{i}_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
+                        bitmap.Save(filename, ImageFormat.Jpeg);
+                        Console.WriteLine($"Saved test frame to: {filename}");
+
+                        await Task.Delay(500); // Wait a bit between frames
                     }
-                    catch (Exception ex)
+                    finally
                     {
-                        tcs.TrySetException(ex);
+                        handle.Free();
+                        DsUtils.FreeAMMediaType(connectedMediaType);
                     }
-                };
-                
-                videoDevice.NewFrame += frameHandler;
-                
-                // Start the video device
-                videoDevice.Start();
-                
-                // Wait for frame with timeout
-                Task timeoutTask = Task.Delay(10000);
-                Task completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
-                
-                if (completedTask == timeoutTask)
-                {
-                    throw new TimeoutException("Timeout waiting for camera frame");
                 }
-                
-                // Save the captured frame
-                Bitmap frame = await tcs.Task;
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string imagePath = Path.Combine(TestImagePath, $"webcam_test_{timestamp}.jpg");
-                
-                frame.Save(imagePath, ImageFormat.Jpeg);
-                Console.WriteLine($"Test image saved to: {imagePath}");
-                
+
                 // Clean up
-                frame.Dispose();
-                videoDevice.SignalToStop();
-                videoDevice.WaitForStop();
-                
+                mediaControl.Stop();
+                Marshal.ReleaseComObject(nullRenderer);
+                Marshal.ReleaseComObject(sampleGrabberFilter);
+                Marshal.ReleaseComObject(videoDevice);
+                Marshal.ReleaseComObject(mediaControl);
+                Marshal.ReleaseComObject(graphBuilder);
+
                 Console.WriteLine("Webcam test completed successfully!");
             }
             catch (Exception ex)

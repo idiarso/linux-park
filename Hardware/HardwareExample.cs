@@ -1,9 +1,9 @@
 using System;
 using System.Threading.Tasks;
-using SimpleParkingAdmin.Models;
+using ParkIRC.Models;
 using Npgsql;
 
-namespace SimpleParkingAdmin.Hardware
+namespace ParkIRC.Hardware
 {
     /// <summary>
     /// Example usage of HardwareManager for ParkingIN application

@@ -21,6 +21,7 @@ using iText.Kernel.Pdf;
 using iText.Layout;
 using iText.Layout.Element;
 using iText.Layout.Properties;
+using ParkIRC.Hardware;
 
 namespace ParkIRC.Controllers
 {
@@ -990,23 +991,23 @@ namespace ParkIRC.Controllers
                     Directory.CreateDirectory(imagesPath);
 
                     // Copy entry photos
-                    foreach (var vehicle in vehicles.Where(v => !string.IsNullOrEmpty(v.EntryPhotoPath)))
+                    foreach (var vehicle in vehicles.Where(v => !string.IsNullOrEmpty(v.EntryImagePath)))
                     {
-                        var sourcePath = Path.Combine(_webHostEnvironment.WebRootPath, vehicle.EntryPhotoPath.TrimStart('/'));
+                        var sourcePath = Path.Combine(_webHostEnvironment.WebRootPath, vehicle.EntryImagePath.TrimStart('/'));
                         if (System.IO.File.Exists(sourcePath))
                         {
-                            var destPath = Path.Combine(imagesPath, Path.GetFileName(vehicle.EntryPhotoPath));
+                            var destPath = Path.Combine(imagesPath, Path.GetFileName(vehicle.EntryImagePath));
                             System.IO.File.Copy(sourcePath, destPath, true);
                         }
                     }
 
                     // Copy exit photos
-                    foreach (var vehicle in vehicles.Where(v => !string.IsNullOrEmpty(v.ExitPhotoPath)))
+                    foreach (var vehicle in vehicles.Where(v => !string.IsNullOrEmpty(v.ExitImagePath)))
                     {
-                        var sourcePath = Path.Combine(_webHostEnvironment.WebRootPath, vehicle.ExitPhotoPath.TrimStart('/'));
+                        var sourcePath = Path.Combine(_webHostEnvironment.WebRootPath, vehicle.ExitImagePath.TrimStart('/'));
                         if (System.IO.File.Exists(sourcePath))
                         {
-                            var destPath = Path.Combine(imagesPath, Path.GetFileName(vehicle.ExitPhotoPath));
+                            var destPath = Path.Combine(imagesPath, Path.GetFileName(vehicle.ExitImagePath));
                             System.IO.File.Copy(sourcePath, destPath, true);
                         }
                     }
@@ -1243,18 +1244,18 @@ namespace ParkIRC.Controllers
                         {
                             var vehicleImages = await _context.Vehicles
                                 .Where(v => clearPeriod == "all" || v.EntryTime < cutoffDate)
-                                .Select(v => new { v.EntryPhotoPath, v.ExitPhotoPath })
+                                .Select(v => new { v.EntryImagePath, v.ExitImagePath })
                                 .ToListAsync();
 
                             imagesToDelete.AddRange(
                                 vehicleImages
-                                    .Where(v => !string.IsNullOrEmpty(v.EntryPhotoPath))
-                                    .Select(v => v.EntryPhotoPath!)
+                                    .Where(v => !string.IsNullOrEmpty(v.EntryImagePath))
+                                    .Select(v => v.EntryImagePath!)
                             );
                             imagesToDelete.AddRange(
                                 vehicleImages
-                                    .Where(v => !string.IsNullOrEmpty(v.ExitPhotoPath))
-                                    .Select(v => v.ExitPhotoPath!)
+                                    .Where(v => !string.IsNullOrEmpty(v.ExitImagePath))
+                                    .Select(v => v.ExitImagePath!)
                             );
                         }
 
@@ -1369,8 +1370,8 @@ namespace ParkIRC.Controllers
                         v.EntryTime,
                         v.ExitTime,
                         v.IsParked,
-                        v.EntryPhotoPath,
-                        v.ExitPhotoPath,
+                        v.EntryImagePath,
+                        v.ExitImagePath,
                         v.BarcodeImagePath,
                         v.ParkingSpaceId,
                         v.ShiftId
@@ -1393,8 +1394,8 @@ namespace ParkIRC.Controllers
                             EntryTime = vehicleInfo.EntryTime,
                             ExitTime = vehicleInfo.ExitTime,
                             IsParked = vehicleInfo.IsParked,
-                            EntryPhotoPath = vehicleInfo.EntryPhotoPath,
-                            ExitPhotoPath = vehicleInfo.ExitPhotoPath,
+                            EntryImagePath = vehicleInfo.EntryImagePath,
+                            ExitImagePath = vehicleInfo.ExitImagePath,
                             BarcodeImagePath = vehicleInfo.BarcodeImagePath,
                             ParkingSpaceId = vehicleInfo.ParkingSpaceId,
                             ShiftId = vehicleInfo.ShiftId
@@ -1924,7 +1925,7 @@ namespace ParkIRC.Controllers
                     success = true,
                     vehicleNumber = parkingTransaction.Vehicle.VehicleNumber,
                     entryTime = parkingTransaction.EntryTime,
-                    entryPhoto = parkingTransaction.Vehicle.EntryPhotoPath,
+                    entryPhoto = parkingTransaction.Vehicle.EntryImagePath,
                     duration = CalculateDuration(parkingTransaction.EntryTime, parkingTransaction.ExitTime).Display,
                     amount = totalAmount
                 });

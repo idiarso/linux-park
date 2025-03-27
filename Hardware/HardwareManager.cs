@@ -4,13 +4,15 @@ using System.IO.Ports;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.Collections.Generic;
 using System.Configuration;
-using AForge.Video;
-using AForge.Video.DirectShow;
+using System.Runtime.InteropServices;
+using DirectShowLib;
 using Npgsql;
+using static DirectShowLib.DsGuid;
 
-namespace SimpleParkingAdmin.Hardware
+namespace ParkIRC.Hardware
 {
     /// <summary>
     /// Manages communication with hardware devices:
@@ -21,7 +23,10 @@ namespace SimpleParkingAdmin.Hardware
     public class HardwareManager : IDisposable
     {
         private SerialPort _serialPort;
-        private VideoCaptureDevice _videoDevice;
+        private IFilterGraph2 _graphBuilder;
+        private IMediaControl _mediaControl;
+        private IBaseFilter _videoDevice;
+        private ISampleGrabber _sampleGrabber;
         private bool _isInitialized = false;
         private string _basePath;
         private bool _disposed = false;
@@ -167,60 +172,68 @@ namespace SimpleParkingAdmin.Hardware
         /// <summary>
         /// Initializes camera device (webcam or IP camera)
         /// </summary>
-        private void InitializeCamera()
+        private async Task InitializeCamera()
         {
             try
             {
-                if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Initialize local webcam
-                    FilterInfoCollection videoDevices = new FilterInfoCollection(FilterCategory.VideoInputDevice);
-                    if (videoDevices.Count == 0)
-                    {
-                        throw new Exception("No video devices found");
-                    }
+                _graphBuilder = (IFilterGraph2)new FilterGraph();
+                _mediaControl = (IMediaControl)_graphBuilder;
 
-                    int deviceIndex = Math.Min(_webcamDeviceIndex, videoDevices.Count - 1);
-                    _videoDevice = new VideoCaptureDevice(videoDevices[deviceIndex].MonikerString);
-                    
-                    // Find closest resolution
-                    string[] dimensions = _cameraResolution.Split('x');
-                    int targetWidth = int.Parse(dimensions[0]);
-                    int targetHeight = int.Parse(dimensions[1]);
-                    
-                    bool resolutionSet = false;
-                    foreach (VideoCapabilities capability in _videoDevice.VideoCapabilities)
-                    {
-                        if (capability.FrameSize.Width == targetWidth && capability.FrameSize.Height == targetHeight)
-                        {
-                            _videoDevice.VideoResolution = capability;
-                            resolutionSet = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!resolutionSet && _videoDevice.VideoCapabilities.Length > 0)
-                    {
-                        // Select default resolution
-                        _videoDevice.VideoResolution = _videoDevice.VideoCapabilities[0];
-                    }
+                // Create and add sample grabber
+                _sampleGrabber = (ISampleGrabber)new SampleGrabber();
+                var sampleGrabberFilter = (IBaseFilter)_sampleGrabber;
+                var hr = _graphBuilder.AddFilter(sampleGrabberFilter, "Sample Grabber");
+                DsError.ThrowExceptionForHR(hr);
 
-                    _videoDevice.NewFrame += VideoDevice_NewFrame;
-                    _videoDevice.Start();
-                    Console.WriteLine("Webcam initialized");
-                }
-                else if (_cameraType.Equals("IP", StringComparison.OrdinalIgnoreCase))
+                // Get first video device
+                _videoDevice = await GetFirstVideoCaptureDeviceAsync();
+                if (_videoDevice == null)
                 {
-                    // For IP camera, we'll use HTTP requests to capture images
-                    // This would typically be implemented with a specific SDK or HTTP client
-                    Console.WriteLine("IP camera initialized");
+                    throw new Exception("No video capture device found");
                 }
+
+                hr = _graphBuilder.AddFilter(_videoDevice, "Video Capture Device");
+                DsError.ThrowExceptionForHR(hr);
+
+                // Set media type
+                var mediaType = new AMMediaType
+                {
+                    majorType = MediaType.Video,
+                    subType = MediaSubType.RGB24,
+                    formatType = FormatType.VideoInfo
+                };
+                hr = _sampleGrabber.SetMediaType(mediaType);
+                DsError.ThrowExceptionForHR(hr);
+
+                // Connect filters
+                var pinOut = DsFindPin.ByDirection(_videoDevice, PinDirection.Output, 0);
+                var pinIn = DsFindPin.ByDirection(sampleGrabberFilter, PinDirection.Input, 0);
+                hr = _graphBuilder.Connect(pinOut, pinIn);
+                DsError.ThrowExceptionForHR(hr);
+
+                // Start capturing
+                hr = _mediaControl.Run();
+                DsError.ThrowExceptionForHR(hr);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to initialize camera: {ex.Message}");
-                throw;
+                throw new Exception("Error initializing camera", ex);
             }
+        }
+
+        private async Task<IBaseFilter> GetFirstVideoCaptureDeviceAsync()
+        {
+            var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
+            if (devices.Length == 0)
+            {
+                return null;
+            }
+
+            var device = devices[0];
+            object source;
+            var iid = typeof(IBaseFilter).GUID;
+            device.Mon.BindToObject(null, null, ref iid, out source);
+            return (IBaseFilter)source;
         }
 
         /// <summary>
@@ -261,55 +274,71 @@ namespace SimpleParkingAdmin.Hardware
         /// </summary>
         private async Task<string> CaptureImageAsync(string ticketId, bool isEntry)
         {
-            string subfolder = isEntry ? _entrySubfolder : _exitSubfolder;
-            string filePath = "";
-
             try
             {
-                // For webcam, use NewFrame event to capture image
                 if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
                 {
-                    // Set up a task completion source to get the frame asynchronously
-                    var tcs = new TaskCompletionSource<Bitmap>();
-                    EventHandler<NewFrameEventArgs> frameHandler = null;
-                    
-                    frameHandler = (sender, e) =>
+                    // Get buffer size
+                    int bufferSize = 0;
+                    var hr = _sampleGrabber.GetCurrentBuffer(ref bufferSize, IntPtr.Zero);
+                    DsError.ThrowExceptionForHR(hr);
+
+                    // Allocate buffer
+                    var buffer = new byte[bufferSize];
+                    var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+                    try
                     {
-                        // Clone the frame to avoid disposal issues
-                        var bitmap = (Bitmap)e.Frame.Clone();
-                        tcs.TrySetResult(bitmap);
-                        
-                        // Remove the event handler after capturing a frame
-                        if (_videoDevice != null)
+                        // Get frame data
+                        hr = _sampleGrabber.GetCurrentBuffer(ref bufferSize, handle.AddrOfPinnedObject());
+                        DsError.ThrowExceptionForHR(hr);
+
+                        // Get media type
+                        var mediaType = new AMMediaType();
+                        hr = _sampleGrabber.GetConnectedMediaType(mediaType);
+                        DsError.ThrowExceptionForHR(hr);
+
+                        try
                         {
-                            _videoDevice.NewFrame -= frameHandler;
+                            var videoInfo = (VideoInfoHeader)Marshal.PtrToStructure(mediaType.formatPtr, typeof(VideoInfoHeader));
+                            var width = videoInfo.BmiHeader.Width;
+                            var height = videoInfo.BmiHeader.Height;
+
+                            // Create filename
+                            string filename = string.Format(_filenameFormat, ticketId, DateTime.Now) + ".jpg";
+                            string targetSubfolder = isEntry ? _entrySubfolder : _exitSubfolder;
+                            string imagePath = Path.Combine(_imageBasePath, targetSubfolder, filename);
+
+                            // Create bitmap
+                            using var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+                            var bitmapData = bitmap.LockBits(
+                                new Rectangle(0, 0, width, height),
+                                ImageLockMode.WriteOnly,
+                                PixelFormat.Format24bppRgb);
+                            try
+                            {
+                                Marshal.Copy(buffer, 0, bitmapData.Scan0, buffer.Length);
+                            }
+                            finally
+                            {
+                                bitmap.UnlockBits(bitmapData);
+                            }
+
+                            // Save image
+                            Directory.CreateDirectory(Path.GetDirectoryName(imagePath));
+                            bitmap.Save(imagePath, ImageFormat.Jpeg);
+
+                            OnImageCaptured(new ImageCapturedEventArgs(ticketId, imagePath, isEntry));
+                            return imagePath;
                         }
-                    };
-                    
-                    _videoDevice.NewFrame += frameHandler;
-                    
-                    // Wait for the frame with a timeout
-                    var timeoutTask = Task.Delay(5000);
-                    var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
-                    
-                    if (completedTask == timeoutTask)
-                    {
-                        throw new TimeoutException("Timeout waiting for camera frame");
+                        finally
+                        {
+                            DsUtils.FreeAMMediaType(mediaType);
+                        }
                     }
-                    
-                    var frame = await tcs.Task;
-                    
-                    // Generate filename and save
-                    string filename = string.Format(_filenameFormat, ticketId, DateTime.Now) + ".jpg";
-                    filePath = Path.Combine(_imageBasePath, subfolder, filename);
-                    
-                    frame.Save(filePath, System.Drawing.Imaging.ImageFormat.Jpeg);
-                    
-                    // Raise event
-                    OnImageCaptured(new ImageCapturedEventArgs(ticketId, filePath, isEntry));
-                    
-                    // Clean up
-                    frame.Dispose();
+                    finally
+                    {
+                        handle.Free();
+                    }
                 }
                 else if (_cameraType.Equals("IP", StringComparison.OrdinalIgnoreCase))
                 {
@@ -319,17 +348,20 @@ namespace SimpleParkingAdmin.Hardware
                     
                     // Create filename
                     string filename = string.Format(_filenameFormat, ticketId, DateTime.Now) + ".jpg";
-                    filePath = Path.Combine(_imageBasePath, subfolder, filename);
+                    string targetSubfolder = isEntry ? _entrySubfolder : _exitSubfolder;
+                    string imagePath = Path.Combine(_imageBasePath, targetSubfolder, filename);
                     
                     // Would typically use HttpClient to get image
                     // For now, just log the operation
-                    Console.WriteLine($"Would capture IP camera image from {url} and save to {filePath}");
+                    Console.WriteLine($"Would capture IP camera image from {url} and save to {imagePath}");
                     
                     // Raise event with mock filepath
-                    OnImageCaptured(new ImageCapturedEventArgs(ticketId, filePath, isEntry));
+                    OnImageCaptured(new ImageCapturedEventArgs(ticketId, imagePath, isEntry));
+                    
+                    return imagePath;
                 }
                 
-                return filePath;
+                return string.Empty;
             }
             catch (Exception ex)
             {
@@ -410,15 +442,6 @@ namespace SimpleParkingAdmin.Hardware
             {
                 Console.WriteLine($"Error processing serial data: {ex.Message}");
             }
-        }
-
-        /// <summary>
-        /// Handles video frame captures
-        /// </summary>
-        private void VideoDevice_NewFrame(object sender, NewFrameEventArgs e)
-        {
-            // This is used for continuous frame preview
-            // For actual image capture we use separate method
         }
 
         /// <summary>
@@ -506,17 +529,35 @@ namespace SimpleParkingAdmin.Hardware
             {
                 if (disposing)
                 {
-                    // Dispose managed resources
-                    if (_videoDevice != null && _videoDevice.IsRunning)
+                    if (_mediaControl != null)
                     {
-                        _videoDevice.SignalToStop();
-                        _videoDevice.WaitForStop();
+                        _mediaControl.Stop();
+                        Marshal.ReleaseComObject(_mediaControl);
+                        _mediaControl = null;
+                    }
+
+                    if (_sampleGrabber != null)
+                    {
+                        Marshal.ReleaseComObject(_sampleGrabber);
+                        _sampleGrabber = null;
+                    }
+
+                    if (_videoDevice != null)
+                    {
+                        Marshal.ReleaseComObject(_videoDevice);
                         _videoDevice = null;
                     }
 
-                    if (_serialPort != null && _serialPort.IsOpen)
+                    if (_graphBuilder != null)
                     {
-                        _serialPort.Close();
+                        Marshal.ReleaseComObject(_graphBuilder);
+                        _graphBuilder = null;
+                    }
+
+                    if (_serialPort != null)
+                    {
+                        if (_serialPort.IsOpen)
+                            _serialPort.Close();
                         _serialPort.Dispose();
                         _serialPort = null;
                     }
