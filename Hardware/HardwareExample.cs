@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using ParkIRC.Models;
 using Npgsql;
+using Microsoft.Extensions.Logging;
 
 namespace ParkIRC.Hardware
 {
@@ -10,22 +11,24 @@ namespace ParkIRC.Hardware
     /// </summary>
     public class ParkingEntryHandler
     {
-        private readonly HardwareManager _hardwareManager;
+        private readonly IHardwareManager _hardwareManager;
         private readonly string _connectionString;
         private readonly string _operatorName;
+        private readonly ILogger<ParkingEntryHandler> _logger;
 
-        public ParkingEntryHandler(string operatorName)
+        public ParkingEntryHandler(IHardwareManager hardwareManager, string operatorName, ILogger<ParkingEntryHandler> logger)
         {
-            _hardwareManager = HardwareManager.Instance;
+            _hardwareManager = hardwareManager ?? throw new ArgumentNullException(nameof(hardwareManager));
             _connectionString = "Host=localhost;Port=5432;Database=parkirdb;Username=postgres;Password=root@rsi;";
             _operatorName = operatorName;
+            _logger = logger;
 
             // Subscribe to hardware events
             _hardwareManager.CommandReceived += HardwareManager_CommandReceived;
             _hardwareManager.ImageCaptured += HardwareManager_ImageCaptured;
 
             // Initialize hardware
-            if (!_hardwareManager.Initialize())
+            if (!_hardwareManager.InitializeAsync().GetAwaiter().GetResult())
             {
                 Console.WriteLine("Failed to initialize hardware. Some features may not work.");
             }
@@ -46,7 +49,7 @@ namespace ParkIRC.Hardware
                     string ticketNumber = $"P{DateTime.Now:yyyyMMddHHmmss}";
                     
                     // Take picture
-                    string imagePath = await _hardwareManager.CaptureEntryImageAsync(ticketNumber);
+                    string imagePath = await _hardwareManager.CaptureImageAsync("entry");
                     
                     if (!string.IsNullOrEmpty(imagePath))
                     {
@@ -138,21 +141,23 @@ namespace ParkIRC.Hardware
     /// </summary>
     public class ParkingExitHandler
     {
-        private readonly HardwareManager _hardwareManager;
+        private readonly IHardwareManager _hardwareManager;
         private readonly string _connectionString;
         private readonly string _operatorName;
+        private readonly ILogger<ParkingExitHandler> _logger;
 
-        public ParkingExitHandler(string operatorName)
+        public ParkingExitHandler(IHardwareManager hardwareManager, string operatorName, ILogger<ParkingExitHandler> logger)
         {
-            _hardwareManager = HardwareManager.Instance;
+            _hardwareManager = hardwareManager ?? throw new ArgumentNullException(nameof(hardwareManager));
             _connectionString = "Host=localhost;Port=5432;Database=parkirdb;Username=postgres;Password=root@rsi;";
             _operatorName = operatorName;
+            _logger = logger;
 
             // Subscribe to hardware events
             _hardwareManager.CommandReceived += HardwareManager_CommandReceived;
 
             // Initialize hardware
-            if (!_hardwareManager.Initialize())
+            if (!_hardwareManager.InitializeAsync().GetAwaiter().GetResult())
             {
                 Console.WriteLine("Failed to initialize hardware. Some features may not work.");
             }
@@ -198,7 +203,7 @@ namespace ParkIRC.Hardware
             try
             {
                 // Take exit picture
-                string exitImagePath = await _hardwareManager.CaptureExitImageAsync(ticketNumber);
+                string exitImagePath = await _hardwareManager.CaptureImageAsync("exit");
                 
                 // Update vehicle record
                 await UpdateExitDataAsync(ticketNumber, exitImagePath, fee, paymentMethodId);

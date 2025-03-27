@@ -1,492 +1,262 @@
 using System;
-using System.Drawing;
-using System.Drawing.Printing;
-using System.Runtime.InteropServices;
-using Microsoft.Extensions.Logging;
-using ParkIRC.Models;
-using ParkIRC.Extensions;
-using System.Net.WebSockets;
+using System.IO.Ports;
 using System.Text;
-using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using ParkIRC.Data;
+using ParkIRC.Models;
 
 namespace ParkIRC.Services
 {
-    public interface IPrinterService
-    {
-        Task<bool> PrintTicket(ParkingTicket ticket);
-        Task<bool> PrintReceipt(ParkingTransaction transaction);
-        Task<bool> PrintTicketAsync(ParkingTicket ticket);
-        Task<bool> PrintEntryTicket(string ticketData);
-        bool CheckPrinterStatus();
-        string GetDefaultPrinter();
-        List<string> GetAvailablePrinters();
-    }
-
-    public class PrinterService : IPrinterService
+    public class PrinterService : IPrinterService, IAsyncDisposable
     {
         private readonly ILogger<PrinterService> _logger;
         private readonly IConfiguration _configuration;
         private readonly IServiceScopeFactory _scopeFactory;
-        private readonly string _printerWebSocketUrl;
-        private readonly Dictionary<string, PrinterStatus> _printerStatuses;
-        private ClientWebSocket _webSocket;
-        private bool _isConnected;
-        private string _defaultPrinter;
+        private readonly SerialPort _serialPort;
+        private readonly SemaphoreSlim _printLock = new(1, 1);
+        private bool _disposed;
 
-        // Constants for Windows API
-        private const uint GENERIC_WRITE = 0x40000000;
-        private const uint OPEN_EXISTING = 3;
+        private const int BAUD_RATE = 9600;
+        private const string DEFAULT_PORT = "COM3";
+        private const int PRINT_TIMEOUT_MS = 5000;
 
-        public PrinterService(IServiceScopeFactory scopeFactory)
+        public PrinterService(
+            ILogger<PrinterService> logger,
+            IConfiguration configuration,
+            IServiceScopeFactory scopeFactory)
         {
-            _scopeFactory = scopeFactory;
-            using (var scope = _scopeFactory.CreateScope())
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+
+            var port = _configuration["PrinterSettings:ComPort"] ?? DEFAULT_PORT;
+            if (string.IsNullOrEmpty(port))
             {
-                var services = scope.ServiceProvider;
-                _logger = services.GetRequiredService<ILogger<PrinterService>>();
-                _configuration = services.GetRequiredService<IConfiguration>();
-                _printerWebSocketUrl = _configuration["PrinterSettings:WebSocketUrl"];
-                _printerStatuses = new Dictionary<string, PrinterStatus>();
-                _webSocket = new ClientWebSocket();
-                if (OperatingSystem.IsWindows())
-                {
-                    _defaultPrinter = GetDefaultPrinter();
-                }
-                else
-                {
-                    _defaultPrinter = string.Empty;
-                    _logger.LogWarning("Printing is only supported on Windows. Using mock implementation for Linux.");
-                }
+                throw new ArgumentException("Printer port cannot be null or empty", nameof(port));
             }
+
+            _serialPort = new SerialPort(port, BAUD_RATE)
+            {
+                ReadTimeout = PRINT_TIMEOUT_MS,
+                WriteTimeout = PRINT_TIMEOUT_MS
+            };
         }
 
-        private ApplicationDbContext CreateDbContext()
+        public async Task InitializeAsync()
         {
-            var scope = _scopeFactory.CreateScope();
-            return scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        }
-
-        public async Task<bool> PrintTicketAsync(ParkingTicket ticket)
-        {
+            ThrowIfDisposed();
+            
             try
             {
-                if (ticket == null)
-                    throw new ArgumentNullException(nameof(ticket));
-
-                // Convert ParkingTicket to TicketData
-                var ticketData = new TicketData
+                if (!_serialPort.IsOpen)
                 {
-                    TicketNumber = ticket.TicketNumber,
-                    VehicleNumber = ticket.Vehicle?.VehicleNumber ?? "Unknown",
-                    EntryTime = ticket.IssueTime.ToString("dd/MM/yyyy HH:mm:ss"),
-                    Barcode = ticket.BarcodeData
-                };
-
-                return await PrintTicket(ticketData);
+                    _serialPort.Open();
+                    _logger.LogInformation("Printer port {Port} opened successfully", _serialPort.PortName);
+                    
+                    // Send initialization command to Arduino
+                    await SendCommand("INIT");
+                    
+                    // Wait for acknowledgment
+                    var response = await ReadResponse();
+                    if (response != "OK")
+                    {
+                        throw new Exception($"Printer initialization failed: {response}");
+                    }
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error printing ticket");
-                return false;
+                _logger.LogError(ex, "Error initializing printer on port {Port}", _serialPort.PortName);
+                throw;
             }
         }
 
-        public async Task<bool> PrintEntryTicket(string ticketNumber)
+        public async Task<bool> PrintTicketAsync(string ticketNumber, string entryTime)
         {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(ticketNumber);
+            ArgumentNullException.ThrowIfNull(entryTime);
+
+            await _printLock.WaitAsync();
             try
             {
-                _logger.LogInformation($"Printing entry ticket: {ticketNumber}");
-                
-                // Convert string data to TicketData
-                var data = new TicketData
+                var ticketData = new TicketData
+                {
+                    TicketNumber = ticketNumber,
+                    EntryTime = entryTime,
+                    VehicleNumber = "Unknown",
+                    Barcode = ticketNumber
+                };
+
+                return await PrintTicketData(ticketData);
+            }
+            finally
+            {
+                _printLock.Release();
+            }
+        }
+
+        public async Task<bool> PrintReceiptAsync(string ticketNumber, string exitTime, decimal amount)
+        {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(ticketNumber);
+            ArgumentNullException.ThrowIfNull(exitTime);
+
+            await _printLock.WaitAsync();
+            try
+            {
+                var receiptData = new TicketData
+                {
+                    TicketNumber = ticketNumber,
+                    EntryTime = exitTime,
+                    VehicleNumber = "Unknown",
+                    Barcode = ticketNumber
+                };
+
+                return await PrintTicketData(receiptData);
+            }
+            finally
+            {
+                _printLock.Release();
+            }
+        }
+
+        public async Task<bool> PrintEntryTicketAsync(string ticketNumber)
+        {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(ticketNumber);
+
+            await _printLock.WaitAsync();
+            try
+            {
+                var ticketData = new TicketData
                 {
                     TicketNumber = ticketNumber,
                     EntryTime = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"),
                     VehicleNumber = "Unknown",
                     Barcode = ticketNumber
                 };
+
+                return await PrintTicketData(ticketData);
+            }
+            finally
+            {
+                _printLock.Release();
+            }
+        }
+
+        private async Task<bool> PrintTicketData(TicketData data)
+        {
+            try
+            {
+                // Format ticket data for thermal printer
+                var printData = FormatTicketForThermalPrinter(data);
                 
-                return await PrintTicket(data);
+                // Send print command to Arduino
+                await SendCommand("PRINT");
+                await SendCommand(printData);
+                
+                // Wait for print completion acknowledgment
+                var response = await ReadResponse();
+                return response == "OK";
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error printing entry ticket");
+                _logger.LogError(ex, "Error printing ticket {TicketNumber}", data.TicketNumber);
                 return false;
             }
         }
 
-        private async Task<bool> PrintToLocalPrinter(string ticketData)
+        private string FormatTicketForThermalPrinter(TicketData data)
         {
-            if (string.IsNullOrEmpty(_defaultPrinter))
+            var sb = new StringBuilder();
+            
+            // Center align header
+            sb.AppendLine("<center>TIKET PARKIR</center>");
+            sb.AppendLine("<bold>================</bold>");
+            
+            // Ticket details
+            sb.AppendLine($"No: {data.TicketNumber}");
+            sb.AppendLine($"Waktu: {data.EntryTime}");
+            if (!string.IsNullOrEmpty(data.VehicleNumber))
             {
-                _logger.LogError("No default printer configured");
-                return false;
+                sb.AppendLine($"Kendaraan: {data.VehicleNumber}");
             }
+            
+            // Add barcode
+            sb.AppendLine("<barcode>");
+            sb.AppendLine(data.Barcode);
+            sb.AppendLine("</barcode>");
+            
+            // Footer
+            sb.AppendLine("<center>================</center>");
+            sb.AppendLine("<cut>"); // Thermal printer cut command
 
-            try
-            {
-                var pd = new PrintDocument();
-                pd.PrinterSettings.PrinterName = _defaultPrinter;
-                pd.PrintPage += (sender, e) =>
-                {
-                    using (Font font = new Font("Arial", 10))
-                    {
-                        e.Graphics.DrawString(ticketData, font, Brushes.Black, 10, 10);
-                    }
-                };
-                pd.Print();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error printing to local printer");
-                return false;
-            }
+            return sb.ToString();
         }
 
-        private string FormatTicketData(TicketData ticket)
+        private async Task SendCommand(string command)
         {
-            return $"Ticket: {ticket.TicketNumber}\nTime: {ticket.EntryTime}\nVehicle: {ticket.VehicleNumber}\nBarcode: {ticket.Barcode}";
+            if (!_serialPort.IsOpen)
+            {
+                throw new InvalidOperationException("Serial port is not open");
+            }
+
+            var data = Encoding.ASCII.GetBytes(command + "\n");
+            await _serialPort.BaseStream.WriteAsync(data);
+            await _serialPort.BaseStream.FlushAsync();
         }
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        static extern IntPtr CreateFile(string lpFileName, uint dwDesiredAccess,
-            uint dwShareMode, IntPtr lpSecurityAttributes, uint dwCreationDisposition,
-            uint dwFlagsAndAttributes, IntPtr hTemplateFile);
-
-        public async Task InitializeAsync()
-        {
-            try
-            {
-                // Try WebSocket connection first
-                await ConnectWebSocketAsync();
-
-                // If WebSocket fails, try reading from JSON
-                if (!_isConnected)
-                {
-                    await LoadPrinterConfigFromJsonAsync();
-                }
-
-                // If both fail, read from database
-                if (!_printerStatuses.Any())
-                {
-                    await LoadPrinterConfigFromDatabaseAsync();
-                }
-
-                // Start monitoring printer status
-                _ = StartPrinterMonitoringAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error initializing printer service");
-            }
-        }
-
-        private async Task ConnectWebSocketAsync()
-        {
-            try
-            {
-                if (_webSocket.State != WebSocketState.Open)
-                {
-                    await _webSocket.ConnectAsync(new Uri(_printerWebSocketUrl), CancellationToken.None);
-                    _isConnected = true;
-                    _logger.LogInformation("WebSocket connected to printer successfully");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to connect to printer WebSocket");
-                _isConnected = false;
-            }
-        }
-
-        private async Task LoadPrinterConfigFromJsonAsync()
-        {
-            try
-            {
-                string jsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "printer_config.json");
-                if (File.Exists(jsonPath))
-                {
-                    string jsonContent = await File.ReadAllTextAsync(jsonPath);
-                    var printers = JsonSerializer.Deserialize<List<PrinterConfig>>(jsonContent);
-                    foreach (var printer in printers)
-                    {
-                        _printerStatuses[printer.Id] = new PrinterStatus
-                        {
-                            Id = printer.Id,
-                            Name = printer.Name,
-                            Port = printer.Port,
-                            IsOnline = false,
-                            LastChecked = DateTime.Now
-                        };
-                    }
-                    _logger.LogInformation("Loaded printer config from JSON");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error loading printer config from JSON");
-            }
-        }
-
-        private async Task LoadPrinterConfigFromDatabaseAsync()
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                var printers = await context.PrinterConfigs
-                    .Where(p => p.IsActive)
-                    .ToListAsync();
-
-                foreach (var printer in printers)
-                {
-                    _printerStatuses[printer.Id] = new PrinterStatus
-                    {
-                        Id = printer.Id,
-                        Name = printer.Name,
-                        Port = printer.Port,
-                        IsOnline = false,
-                        LastChecked = DateTime.Now
-                    };
-                }
-                _logger.LogInformation("Loaded printer config from database");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error loading printer config from database");
-            }
-        }
-
-        private async Task StartPrinterMonitoringAsync()
-        {
-            while (true)
-            {
-                try
-                {
-                    if (_isConnected)
-                    {
-                        // Monitor via WebSocket
-                        await MonitorPrinterViaWebSocketAsync();
-                    }
-                    else
-                    {
-                        // Monitor via Serial/USB
-                        await MonitorPrinterViaSerialAsync();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error monitoring printer status");
-                }
-
-                await Task.Delay(5000); // Check every 5 seconds
-            }
-        }
-
-        private async Task MonitorPrinterViaWebSocketAsync()
+        private async Task<string> ReadResponse()
         {
             var buffer = new byte[1024];
-            while (_webSocket.State == WebSocketState.Open)
-            {
-                try
-                {
-                    var result = await _webSocket.ReceiveAsync(
-                        new ArraySegment<byte>(buffer), CancellationToken.None);
-
-                    if (result.MessageType == WebSocketMessageType.Text)
-                    {
-                        string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                        var status = JsonSerializer.Deserialize<PrinterStatus>(message);
-                        UpdatePrinterStatus(status);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error receiving WebSocket message");
-                    _isConnected = false;
-                    break;
-                }
-            }
-        }
-
-        private async Task MonitorPrinterViaSerialAsync()
-        {
-            foreach (var printer in _printerStatuses.Values)
-            {
-                try
-                {
-                    using (var serialPort = new System.IO.Ports.SerialPort(printer.Port))
-                    {
-                        serialPort.Open();
-                        printer.IsOnline = true;
-                        printer.LastChecked = DateTime.Now;
-                        serialPort.Close();
-                    }
-                }
-                catch
-                {
-                    printer.IsOnline = false;
-                    printer.LastChecked = DateTime.Now;
-                }
-            }
-        }
-
-        public async Task<bool> PrintTicket(ParkingTicket ticket)
-        {
-            if (!OperatingSystem.IsWindows())
-            {
-                // Linux mock implementation - just log the ticket info
-                _logger.LogInformation("=== MOCK TICKET PRINTING (LINUX) ===");
-                _logger.LogInformation($"Ticket Number: {ticket.TicketNumber}");
-                _logger.LogInformation($"Date/Time: {ticket.IssueTime:dd/MM/yyyy HH:mm}");
-                _logger.LogInformation($"Vehicle: {ticket.VehicleNumber}");
-                _logger.LogInformation($"Vehicle Type: {ticket.VehicleType}");
-                _logger.LogInformation($"Parking Space: {ticket.ParkingSpaceNumber}");
-                _logger.LogInformation($"Entry Time: {ticket.EntryTime:dd/MM/yyyy HH:mm}");
-                _logger.LogInformation("=== END MOCK TICKET PRINTING ===");
-                return true; // Return success for Linux
-            }
-
+            var sb = new StringBuilder();
+            
             try
             {
-                if (OperatingSystem.IsWindows())
+                while (true)
                 {
-                    var pd = new PrintDocument();
-                    pd.PrinterSettings.PrinterName = _defaultPrinter;
-
-                    pd.PrintPage += (sender, e) =>
+                    var count = await _serialPort.BaseStream.ReadAsync(buffer);
+                    if (count == 0) break;
+                    
+                    var text = Encoding.ASCII.GetString(buffer, 0, count);
+                    sb.Append(text);
+                    
+                    if (text.Contains('\n'))
                     {
-                        using var font = new Font("Arial", 10);
-                        float yPos = 10;
-                        e.Graphics.DrawString("TIKET PARKIR", new Font("Arial", 12, FontStyle.Bold), Brushes.Black, 10, yPos);
-                        yPos += 20;
-
-                        // Print ticket details
-                        e.Graphics.DrawString($"No. Tiket: {ticket.TicketNumber}", font, Brushes.Black, 10, yPos);
-                        yPos += 20;
-                        e.Graphics.DrawString($"Tanggal: {ticket.IssueTime:dd/MM/yyyy HH:mm}", font, Brushes.Black, 10, yPos);
-                        yPos += 20;
-                        e.Graphics.DrawString($"Kendaraan: {ticket.VehicleNumber}", font, Brushes.Black, 10, yPos);
-                        yPos += 20;
-
-                        // Print QR Code if available
-                        if (!string.IsNullOrEmpty(ticket.BarcodeImagePath))
-                        {
-                            try
-                            {
-                                using var qrImage = Image.FromFile(ticket.BarcodeImagePath);
-                                e.Graphics.DrawImage(qrImage, 10, yPos, 100, 100);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(ex, "Error printing QR code");
-                            }
-                        }
-                    };
-
-                    pd.Print();
-                    return true;
+                        break;
+                    }
                 }
-                return false;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error printing ticket");
-                return false;
-            }
-        }
-
-        public async Task<bool> PrintReceipt(ParkingTransaction transaction)
-        {
-            if (!OperatingSystem.IsWindows())
-            {
-                // Linux mock implementation - just log the receipt info
-                _logger.LogInformation("=== MOCK RECEIPT PRINTING (LINUX) ===");
-                _logger.LogInformation($"Transaction Number: {transaction.TransactionNumber}");
-                _logger.LogInformation($"Vehicle: {transaction.Vehicle?.VehicleNumber ?? "-"}");
-                _logger.LogInformation($"Entry: {transaction.EntryTime:dd/MM/yyyy HH:mm}");
-                _logger.LogInformation($"Exit: {transaction.ExitTime:dd/MM/yyyy HH:mm}");
                 
-                // Check if ExitTime is not the default value
-                if (transaction.ExitTime != default)
-                {
-                    _logger.LogInformation($"Duration: {(transaction.ExitTime - transaction.EntryTime):hh\\:mm}");
-                }
-                _logger.LogInformation($"Total: {transaction.TotalAmount.ToRupiah()}");
-                _logger.LogInformation("=== END MOCK RECEIPT PRINTING ===");
-                return true; // Return success for Linux
+                return sb.ToString().Trim();
             }
-
-            try
+            catch (TimeoutException)
             {
-                if (OperatingSystem.IsWindows())
-                {
-                    var pd = new PrintDocument();
-                    pd.PrinterSettings.PrinterName = _defaultPrinter;
-
-                    pd.PrintPage += (sender, e) =>
-                    {
-                        using var font = new Font("Arial", 10);
-                        float yPos = 10;
-                        e.Graphics.DrawString("STRUK PARKIR", new Font("Arial", 12, FontStyle.Bold), Brushes.Black, 10, yPos);
-                        yPos += 20;
-
-                        // Print receipt details
-                        e.Graphics.DrawString($"No. Transaksi: {transaction.TransactionNumber}", font, Brushes.Black, 10, yPos);
-                        yPos += 20;
-                        e.Graphics.DrawString($"Kendaraan: {transaction.Vehicle?.VehicleNumber ?? "-"}", font, Brushes.Black, 10, yPos);
-                        yPos += 20;
-                        e.Graphics.DrawString($"Masuk: {transaction.EntryTime:dd/MM/yyyy HH:mm}", font, Brushes.Black, 10, yPos);
-                        yPos += 20;
-                        e.Graphics.DrawString($"Keluar: {transaction.ExitTime:dd/MM/yyyy HH:mm}", font, Brushes.Black, 10, yPos);
-                        yPos += 20;
-                        
-                        // Check if ExitTime is not the default value
-                        if (transaction.ExitTime != default)
-                        {
-                            e.Graphics.DrawString($"Durasi: {(transaction.ExitTime - transaction.EntryTime):hh\\:mm}", font, Brushes.Black, 10, yPos);
-                            yPos += 20;
-                        }
-                        e.Graphics.DrawString($"Total: {transaction.TotalAmount.ToRupiah()}", new Font("Arial", 10, FontStyle.Bold), Brushes.Black, 10, yPos);
-                    };
-
-                    pd.Print();
-                    return true;
-                }
-                return false;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error printing receipt");
-                return false;
+                _logger.LogWarning("Timeout waiting for printer response");
+                return "TIMEOUT";
             }
         }
 
-        public bool CheckPrinterStatus()
+        public async Task<bool> CheckPrinterStatusAsync()
         {
-            if (!OperatingSystem.IsWindows())
-            {
-                // Linux mock implementation - always return true
-                _logger.LogInformation("Mock printer check on Linux - always returns true");
-                return true;
-            }
-
+            ThrowIfDisposed();
+            
             try
             {
-                if (OperatingSystem.IsWindows())
+                if (!_serialPort.IsOpen)
                 {
-                    var handle = CreateFile($"\\\\.\\{_defaultPrinter}", GENERIC_WRITE, 0, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
-                    if (handle == IntPtr.Zero || handle.ToInt32() == -1)
-                    {
-                        return false;
-                    }
-                    return true;
+                    return false;
                 }
-                return false;
+
+                // Send status check command
+                await SendCommand("STATUS");
+                var response = await ReadResponse();
+                return response?.Trim() == "OK";
             }
             catch (Exception ex)
             {
@@ -495,138 +265,140 @@ namespace ParkIRC.Services
             }
         }
 
-        public string GetDefaultPrinter()
+        public async Task<bool> PrintTicket(string ticketNumber, string entryTime)
         {
-            if (!OperatingSystem.IsWindows())
-            {
-                // Linux mock implementation - return mock printer name
-                return "LINUX_MOCK_PRINTER";
-            }
+            return await PrintTicketAsync(ticketNumber, entryTime);
+        }
 
+        public async Task<bool> PrintReceipt(string ticketNumber, string exitTime, decimal amount)
+        {
+            return await PrintReceiptAsync(ticketNumber, exitTime, amount);
+        }
+
+        public string GetPrinterPort()
+        {
+            ThrowIfDisposed();
+            return _serialPort.PortName;
+        }
+
+        public async Task<IEnumerable<(string id, string status)>> GetAllPrinterStatus()
+        {
+            var statuses = new List<(string id, string status)>();
             try
             {
-                if (OperatingSystem.IsWindows())
+                // Get all configured printers
+                var printers = await GetConfiguredPrintersAsync();
+                foreach (var printer in printers)
                 {
-                    var ps = new PrinterSettings();
-                    return ps.PrinterName;
+                    var status = await GetPrinterStatusAsync(printer.Id);
+                    statuses.Add((printer.Id, status));
                 }
-                return string.Empty;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting default printer");
-                return string.Empty;
+                _logger.LogError(ex, "Error getting printer statuses");
             }
+            return statuses;
         }
 
-        public List<string> GetAvailablePrinters()
+        private async Task<IEnumerable<PrinterConfig>> GetConfiguredPrintersAsync()
         {
-            if (!OperatingSystem.IsWindows())
-            {
-                // Linux mock implementation - return mock printer list
-                return new List<string> { "LINUX_MOCK_PRINTER" };
-            }
-
+            var printers = new List<PrinterConfig>();
             try
             {
-                if (OperatingSystem.IsWindows())
-                {
-                    return PrinterSettings.InstalledPrinters.Cast<string>().ToList();
-                }
-                return new List<string>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting available printers");
-                return new List<string>();
-            }
-        }
+                using var scope = _scopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        public async Task<bool> PrintTicket(TicketData ticketData)
-        {
-            try
-            {
-                if (!OperatingSystem.IsWindows())
-                {
-                    // Linux mock implementation - just log the ticket info
-                    _logger.LogInformation("=== MOCK TICKET PRINTING (LINUX) ===");
-                    _logger.LogInformation($"Ticket Number: {ticketData.TicketNumber}");
-                    _logger.LogInformation($"Vehicle: {ticketData.VehicleNumber}");
-                    _logger.LogInformation($"Entry Time: {ticketData.EntryTime}");
-                    _logger.LogInformation($"Barcode: {ticketData.Barcode}");
-                    _logger.LogInformation("=== END MOCK TICKET PRINTING ===");
-                    return true; // Return success for Linux
-                }
+                var devices = await dbContext.Devices
+                    .Where(d => d.Type == "Printer" && d.IsActive)
+                    .ToListAsync();
 
-                if (OperatingSystem.IsWindows())
+                foreach (var device in devices)
                 {
-                    var pd = new PrintDocument();
-                    pd.PrinterSettings.PrinterName = _defaultPrinter;
-
-                    pd.PrintPage += (sender, e) =>
+                    printers.Add(new PrinterConfig
                     {
-                        using var font = new Font("Arial", 10);
-                        float yPos = 10;
-                        e.Graphics.DrawString("TIKET PARKIR", new Font("Arial", 12, FontStyle.Bold), Brushes.Black, 10, yPos);
-                        yPos += 20;
-
-                        // Print ticket details
-                        e.Graphics.DrawString($"No. Tiket: {ticketData.TicketNumber}", font, Brushes.Black, 10, yPos);
-                        yPos += 20;
-                        e.Graphics.DrawString($"Tanggal: {ticketData.EntryTime}", font, Brushes.Black, 10, yPos);
-                        yPos += 20;
-                        e.Graphics.DrawString($"Kendaraan: {ticketData.VehicleNumber}", font, Brushes.Black, 10, yPos);
-                        yPos += 20;
-                    };
-
-                    pd.Print();
-                    return true;
+                        Id = device.Id.ToString(),
+                        Name = device.Name,
+                        Port = device.Port,
+                        IpAddress = device.IpAddress
+                    });
                 }
-                return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error printing ticket");
-                return false;
+                _logger.LogError(ex, "Error getting configured printers");
             }
+            return printers;
         }
 
-        private void UpdatePrinterStatus(PrinterStatus status)
+        private async Task<string> GetPrinterStatusAsync(string printerId)
         {
-            if (_printerStatuses.ContainsKey(status.Id))
+            try
             {
-                _printerStatuses[status.Id] = status;
+                using var scope = _scopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+                var device = await dbContext.Devices
+                    .FirstOrDefaultAsync(d => d.Id.ToString() == printerId && d.Type == "Printer");
+
+                if (device == null)
+                    return "Not Found";
+
+                return device.Status;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting printer status for {PrinterId}", printerId);
+                return "Error";
             }
         }
 
-        public Dictionary<string, PrinterStatus> GetAllPrinterStatus()
+        private class PrinterConfig
         {
-            return _printerStatuses;
+            public string Id { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public int Port { get; set; }
+            public string IpAddress { get; set; } = string.Empty;
         }
-    }
 
-    public class PrinterStatus
-    {
-        public string Id { get; set; }
-        public string Name { get; set; }
-        public string Port { get; set; }
-        public bool IsOnline { get; set; }
-        public DateTime LastChecked { get; set; }
-    }
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(PrinterService));
+            }
+        }
 
-    public class PrinterConfig
-    {
-        public string Id { get; set; }
-        public string Name { get; set; }
-        public string Port { get; set; }
-        public bool IsActive { get; set; }
+        public async ValueTask DisposeAsync()
+        {
+            if (!_disposed)
+            {
+                _disposed = true;
+
+                if (_serialPort.IsOpen)
+                {
+                    try
+                    {
+                        await SendCommand("CLOSE");
+                        _serialPort.Close();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error closing printer port");
+                    }
+                }
+                
+                _serialPort.Dispose();
+                _printLock.Dispose();
+            }
+        }
     }
 
     public class TicketData
     {
-        public string TicketNumber { get; set; }
-        public string VehicleNumber { get; set; }
-        public string EntryTime { get; set; }
-        public string Barcode { get; set; }
+        public string TicketNumber { get; set; } = string.Empty;
+        public string VehicleNumber { get; set; } = string.Empty;
+        public string EntryTime { get; set; } = string.Empty;
+        public string Barcode { get; set; } = string.Empty;
     }
 }

@@ -19,11 +19,20 @@ namespace ParkIRC.Data
         public DbSet<Operator> Operators { get; set; } = null!;
         public DbSet<ParkingTicket> ParkingTickets { get; set; } = null!;
         public DbSet<Journal> Journals { get; set; } = null!;
-        public DbSet<ParkingRateConfiguration> ParkingRates { get; set; } = null!;
+        public DbSet<ParkingRate> ParkingRates { get; set; } = null!;
         public DbSet<CameraSettings> CameraSettings { get; set; } = null!;
         public DbSet<EntryGate> EntryGates { get; set; } = null!;
         public DbSet<SiteSettings> SiteSettings { get; set; } = null!;
         public DbSet<PrinterConfig> PrinterConfigs { get; set; } = null!;
+        public DbSet<User> Users { get; set; }
+        public DbSet<Role> Roles { get; set; }
+        public DbSet<SystemLog> SystemLogs { get; set; }
+        public DbSet<HardwareStatus> HardwareStatuses { get; set; }
+        public DbSet<AccessToken> AccessTokens { get; set; }
+        public DbSet<Device> Devices { get; set; }
+        public DbSet<DeviceConfig> DeviceConfigs { get; set; }
+        public DbSet<LoopDetector> LoopDetectors { get; set; }
+        public DbSet<Camera> Cameras { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -118,7 +127,7 @@ namespace ParkIRC.Data
                       .OnDelete(DeleteBehavior.Restrict);
             });
 
-            builder.Entity<ParkingRateConfiguration>(entity =>
+            builder.Entity<ParkingRate>(entity =>
             {
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.VehicleType).IsRequired();
@@ -169,6 +178,18 @@ namespace ParkIRC.Data
                 entity.Property(e => e.IsActive).HasDefaultValue(true);
                 entity.Property(e => e.LastChecked).IsRequired();
             });
+
+            builder.Entity<ParkingTransaction>()
+                .HasIndex(p => p.TicketNumber)
+                .IsUnique();
+
+            builder.Entity<User>()
+                .HasIndex(u => u.Username)
+                .IsUnique();
+
+            builder.Entity<Role>()
+                .HasIndex(r => r.Name)
+                .IsUnique();
         }
     }
 }

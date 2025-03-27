@@ -6,6 +6,7 @@ using ParkIRC.Services;
 using Microsoft.AspNetCore.Authorization;
 using System;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace ParkIRC.Controllers
 {
@@ -14,11 +15,13 @@ namespace ParkIRC.Controllers
     {
         private readonly ApplicationDbContext _context;
         private readonly IPrinterService _printerService;
+        private readonly ILogger<TicketController> _logger;
 
-        public TicketController(ApplicationDbContext context, IPrinterService printerService)
+        public TicketController(ApplicationDbContext context, IPrinterService printerService, ILogger<TicketController> logger)
         {
             _context = context;
             _printerService = printerService;
+            _logger = logger;
         }
 
         public IActionResult PrintTicket()
@@ -70,17 +73,15 @@ namespace ParkIRC.Controllers
 
             try
             {
-                // Try to print the ticket
-                bool printSuccess = await _printerService.PrintTicket(ticket);
+                // Print ticket
+                var success = await _printerService.PrintTicket(ticket.TicketNumber, ticket.EntryTime.ToString("dd/MM/yyyy HH:mm:ss"));
+                if (!success)
+                {
+                    _logger.LogError("Failed to print ticket {TicketNumber}", ticket.TicketNumber);
+                    return StatusCode(500, "Failed to print ticket");
+                }
                 
-                if (printSuccess)
-                {
-                    return Json(new { success = true, message = "Tiket berhasil dicetak" });
-                }
-                else
-                {
-                    return Json(new { success = false, message = "Gagal mencetak tiket. Periksa printer Anda." });
-                }
+                return Json(new { success = true, message = "Tiket berhasil dicetak" });
             }
             catch (Exception ex)
             {

@@ -132,12 +132,11 @@ namespace ParkIRC.Controllers
                 await _context.ParkingTransactions.AddAsync(transaction);
                 await _context.SaveChangesAsync();
 
-                // Print ticket
-                bool printSuccess = await _printerService.PrintTicket(ticket);
-                if (!printSuccess)
-                {
-                    _logger.LogWarning("Failed to print ticket {TicketNumber}", ticket.TicketNumber);
-                }
+                // Print entry ticket
+                var ticketNumber = ticket.TicketNumber;
+                var entryTime = DateTime.Now;
+
+                bool printSuccess = await _printerService.PrintTicket(ticketNumber, entryTime.ToString("dd/MM/yyyy HH:mm:ss"));
 
                 // Open gate
                 await OpenGateAsync();
@@ -226,19 +225,19 @@ namespace ParkIRC.Controllers
                 _context.Journals.Add(journal);
                 await _context.SaveChangesAsync();
 
-                // Create parking transaction
+                // Find active transaction
                 var transaction = await _context.ParkingTransactions
-                    .FirstOrDefaultAsync(t => t.VehicleId.ToString() == vehicle.Id.ToString() && t.Status == "Active");
+                    .FirstOrDefaultAsync(t => t.VehicleId == vehicle.Id && t.Status == "Active");
                 if (transaction == null)
                 {
                     return BadRequest(new { error = "Parking transaction not found" });
                 }
 
                 // Print receipt
-                bool printSuccess = await _printerService.PrintReceipt(transaction);
+                bool printSuccess = await _printerService.PrintReceipt(ticket.TicketNumber, vehicle.ExitTime?.ToString("dd/MM/yyyy HH:mm:ss") ?? "", ticket.Amount);
                 if (!printSuccess)
                 {
-                    _logger.LogWarning("Failed to print receipt for transaction {TransactionNumber}", transaction.TransactionNumber);
+                    _logger.LogWarning("Failed to print receipt for transaction {TransactionNumber}", ticket.TicketNumber);
                 }
 
                 // Open the gate

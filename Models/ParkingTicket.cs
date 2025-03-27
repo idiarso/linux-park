@@ -22,6 +22,10 @@ namespace ParkIRC.Models
         
         public DateTime EntryTime { get; set; }
         
+        public DateTime? ExitTime { get; set; }
+        
+        public decimal Amount { get; set; }
+        
         public DateTime? ScanTime { get; set; }
         
         public bool IsUsed { get; set; }
@@ -57,5 +61,21 @@ namespace ParkIRC.Models
         public bool IsValid { get; set; } = true;
         
         public DateTime? UsedAt { get; set; }
+        
+        public string LicensePlate { get; set; } = string.Empty;
+        
+        public string EntryImagePath { get; set; } = string.Empty;
+        
+        public string ExitImagePath { get; set; } = string.Empty;
+        
+        public bool IsPaid { get; set; }
+        
+        public DateTime CreatedAt { get; set; }
+        
+        public string CreatedBy { get; set; } = string.Empty;
+        
+        public DateTime? LastModifiedAt { get; set; }
+        
+        public string LastModifiedBy { get; set; } = string.Empty;
     }
 } 

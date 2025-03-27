@@ -4,35 +4,59 @@
 1. [Pendahuluan](#pendahuluan)
 2. [Kebutuhan Sistem](#kebutuhan-sistem)
 3. [Instalasi](#instalasi)
-4. [Konfigurasi Pop!_OS](#konfigurasi-popos)
-5. [Konfigurasi Database](#konfigurasi-database)
-6. [WebSocket Server](#websocket-server)
-7. [Manajemen Data Offline](#manajemen-data-offline)
-8. [Pemantauan Sistem](#pemantauan-sistem)
-9. [Troubleshooting](#troubleshooting)
+4. [Konfigurasi Sistem](#konfigurasi-sistem)
+5. [Konfigurasi Database PostgreSQL](#konfigurasi-database)
+6. [Printer Service](#printer-service)
+7. [WebSocket Server](#websocket-server)
+8. [Manajemen Data Offline](#manajemen-data-offline)
+9. [Pemantauan Sistem](#pemantauan-sistem)
+10. [Troubleshooting](#troubleshooting)
 
 ## Pendahuluan
 
-Panduan ini ditujukan untuk administrator sistem yang bertanggung jawab mengelola infrastruktur server untuk Sistem Parkir Modern. Dokumen ini akan membahas aspek teknis dari sistem, termasuk konfigurasi database, WebSocket server, dan penanganan data offline.
+Panduan ini ditujukan untuk administrator sistem yang bertanggung jawab mengelola infrastruktur server untuk Sistem Parkir Modern. Dokumen ini mencakup aspek teknis dari sistem, termasuk konfigurasi database PostgreSQL, printer thermal, WebSocket server, dan penanganan data offline.
 
 ## Kebutuhan Sistem
 
-- Pop!_OS 22.04 LTS atau lebih baru
+### Server Requirements
+- Windows 10/11 atau Pop!_OS 22.04 LTS
 - Minimal 4GB RAM
 - 20GB ruang disk
 - Koneksi jaringan lokal
+- .NET 6.0 Runtime
+- PostgreSQL 14 atau lebih baru
+- Port COM untuk printer thermal (COM3 default)
+
+### Printer Requirements
+- Thermal printer compatible
+- Arduino untuk kontrol printer
+- Kabel serial
+- Driver printer thermal
 
 ## Instalasi
 
-### Package Dependencies
+### Package Dependencies (Windows)
+```powershell
+# Install Chocolatey jika belum ada
+Set-ExecutionPolicy Bypass -Scope Process -Force
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+
+# Install dependencies
+choco install dotnet-6.0-runtime -y
+choco install postgresql14 -y
+```
+
+### Package Dependencies (Pop!_OS)
 ```bash
 # Update sistem
 sudo apt update && sudo apt upgrade
 
-# Install dependencies
+# Install PostgreSQL dan dependencies
 sudo apt install -y \
-    postgresql \
-    postgresql-contrib \
+    postgresql-14 \
+    postgresql-contrib-14 \
+    dotnet-sdk-6.0 \
     cups \
     cups-client \
     cups-daemon \
@@ -44,14 +68,10 @@ sudo apt install -y \
     ufw
 ```
 
-### Systemd Service
-Buat file service untuk aplikasi ParkIRC:
-
+### Systemd Service (Linux)
 ```bash
 sudo nano /etc/systemd/system/parkirc.service
 ```
-
-Isi dengan konfigurasi berikut:
 
 ```ini
 [Unit]
@@ -70,113 +90,87 @@ Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
 
 [Install]
 WantedBy=multi-user.target
-```
-
-Aktifkan service:
-
-```bash
-sudo systemctl enable parkirc
-sudo systemctl start parkirc
-```
-
-## Konfigurasi Pop!_OS
-
-### Kebutuhan Sistem
-- Pop!_OS 22.04 LTS atau lebih baru
-- Minimal 4GB RAM
-- 20GB ruang disk
-- Koneksi jaringan lokal
-
-### Package Dependencies
-```bash
-# Update sistem
-sudo apt update && sudo apt upgrade
-
-# Install dependencies
-sudo apt install -y \
-    postgresql \
-    postgresql-contrib \
-    cups \
-    cups-client \
-    cups-daemon \
-    printer-driver-escpos \
-    libcups2 \
-    libcupsimage2 \
-    nginx \
-    certbot \
-    ufw
-```
-
-### Systemd Service
-Buat file service untuk aplikasi ParkIRC:
-
-```bash
-sudo nano /etc/systemd/system/parkirc.service
-```
-
-Isi dengan konfigurasi berikut:
-
-```ini
-[Unit]
-Description=ParkIRC Web Application
-After=network.target postgresql.service
-
-[Service]
-WorkingDirectory=/opt/parkirc
-ExecStart=/usr/bin/dotnet ParkIRC.dll
-Restart=always
-RestartSec=10
-KillSignal=SIGINT
-User=parkirc
-Environment=ASPNETCORE_ENVIRONMENT=Production
-Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Aktifkan service:
-
-```bash
-sudo systemctl enable parkirc
-sudo systemctl start parkirc
 ```
 
 ## Konfigurasi Database
 
-### Pengaturan Database MySQL
+### PostgreSQL Database Setup
 
-1. **Kredensial Database**:
-   - Kredensial default tersimpan di `config/database.ini`
-   - Format file konfigurasi:
-   ```ini
-   [Database]
-   Server=localhost
-   Port=3306
-   Username=parking_user
-   Password=secure_password
-   Database=parking_system
-   ```
-
-2. **Optimasi Performa**:
-   - Tambahkan indeks yang sesuai untuk meningkatkan performa query
-   - Parameter MySQL yang direkomendasikan:
-   ```
-   innodb_buffer_pool_size=1G
-   max_connections=200
-   connect_timeout=10
-   wait_timeout=600
-   ```
-
-3. **Backup Database**:
-   - Jadwalkan backup otomatis setiap hari
-   - Simpan backup minimal 30 hari
-   - Contoh script backup:
+1. **Konfigurasi PostgreSQL**:
    ```bash
-   #!/bin/bash
-   TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-   mysqldump -u backup_user -p'backup_password' parking_system > /backup/parking_system_$TIMESTAMP.sql
+   # Windows: Run as Administrator
+   psql -U postgres
+   
+   # Linux
+   sudo -u postgres psql
    ```
+
+2. **Buat Database dan User**:
+   ```sql
+   -- Buat database
+   CREATE DATABASE parkir2;
+   
+   -- Verifikasi password untuk user postgres
+   ALTER USER postgres WITH PASSWORD 'postgres';
+   
+   -- Berikan akses ke database
+   GRANT ALL PRIVILEGES ON DATABASE parkir2 TO postgres;
+   ```
+
+3. **Connection String**:
+   ```json
+   {
+     "ConnectionStrings": {
+       "DefaultConnection": "Host=localhost;Port=5432;Database=parkir2;Username=postgres;Password=postgres"
+     }
+   }
+   ```
+
+4. **Backup Database**:
+   ```bash
+   # Windows
+   pg_dump -U postgres -F c parkir2 > "%USERPROFILE%\Documents\Backup\parkir2_%date:~-4%%date:~3,2%%date:~0,2%.backup"
+
+   # Linux
+   pg_dump -U postgres -F c parkir2 > ~/backup/parkir2_$(date +%Y%m%d).backup
+   ```
+
+5. **Restore Database**:
+   ```bash
+   # Windows
+   pg_restore -U postgres -d parkir2 backup_file.backup
+
+   # Linux
+   pg_restore -U postgres -d parkir2 backup_file.backup
+   ```
+
+## Printer Service
+
+### Konfigurasi Printer
+
+1. **Port Settings**:
+   ```json
+   {
+     "PrinterSettings": {
+       "Port": "COM3",
+       "BaudRate": 9600,
+       "Timeout": 5000
+     }
+   }
+   ```
+
+2. **Printer Commands**:
+   - Initialize: `ESC @ CR LF`
+   - Cut Paper: `GS V 1`
+   - Bold: `ESC E 1`
+   - Normal: `ESC E 0`
+   - Center: `ESC a 1`
+   - Left Align: `ESC a 0`
+
+3. **Error Handling**:
+   - Timeout: 5 seconds
+   - Max retries: 3
+   - Thread-safe operations dengan SemaphoreSlim
 
 ## WebSocket Server
 

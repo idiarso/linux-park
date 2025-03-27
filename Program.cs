@@ -14,6 +14,13 @@ using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Hosting;
 using ParkIRC.Infrastructure.Logging;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using System.Text.Json;
+using ParkIRC.Hardware;
 
 // Configurar comportamiento legacy de timestamps para Npgsql
 // Esto permite usar DateTime locales con PostgreSQL
@@ -38,9 +45,11 @@ try
 
     // Add database configuration
     builder.Services.AddDbContext<ApplicationDbContext>(options => {
-        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+        var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+            ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
         options.UseNpgsql(connectionString, npgsqlOptions => {
-            npgsqlOptions.MigrationsAssembly(typeof(Program).Assembly.FullName);
+            npgsqlOptions.MigrationsAssembly(typeof(Program).Assembly.FullName 
+                ?? throw new InvalidOperationException("Assembly name not found."));
         });
         
         // Enable detailed error messages in Development
@@ -105,11 +114,19 @@ try
     builder.Services.AddResponseCaching();
 
     // Add printer service with DbContext factory
-    builder.Services.AddSingleton<IPrinterService>(sp => {
+    builder.Services.AddScoped<IPrinterService>(sp => {
+        var logger = sp.GetRequiredService<ILogger<PrinterService>>();
+        var config = sp.GetRequiredService<IConfiguration>();
         var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
-        return new PrinterService(scopeFactory);
+        return new PrinterService(logger, config, scopeFactory);
     });
 
+    // Add HardwareManager as scoped service with configuration
+    builder.Services.AddScoped<HardwareManager>();
+    
+    // Add HardwareRedundancyService
+    builder.Services.AddScoped<IHardwareRedundancyService, HardwareRedundancyService>();
+    
     // Add background service untuk cek koneksi
     builder.Services.AddHostedService<ConnectionMonitorService>();
 
@@ -126,7 +143,6 @@ try
     if (!builder.Environment.IsDevelopment())
     {
         builder.Services.AddDataProtection()
-            .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "keys")))
             .SetApplicationName("ParkIRC");
     }
 
@@ -193,10 +209,14 @@ try
             var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             
             // Create database directory if it doesn't exist (no necesario para PostgreSQL, pero lo dejamos por si vuelven a SQLite)
-            var dbPath = Path.GetDirectoryName(builder.Configuration.GetConnectionString("DefaultConnection").Replace("Data Source=", ""));
-            if (!string.IsNullOrEmpty(dbPath) && !Directory.Exists(dbPath))
+            var connString = builder.Configuration.GetConnectionString("DefaultConnection");
+            if (!string.IsNullOrEmpty(connString))
             {
-                Directory.CreateDirectory(dbPath);
+                var dbPath = Path.GetDirectoryName(connString.Replace("Data Source=", ""));
+                if (!string.IsNullOrEmpty(dbPath) && !Directory.Exists(dbPath))
+                {
+                    Directory.CreateDirectory(dbPath);
+                }
             }
             
             // Test database connection
@@ -223,12 +243,13 @@ try
             }
 
             // Create admin user if it doesn't exist
-            if (await userManager.FindByEmailAsync("admin@parkingsystem.com") == null)
+            var adminEmail = "admin@parkingsystem.com";
+            if (await userManager.FindByEmailAsync(adminEmail) == null)
             {
                 var adminUser = new Operator
                 {
-                    UserName = "admin@parkingsystem.com",
-                    Email = "admin@parkingsystem.com",
+                    UserName = adminEmail,
+                    Email = adminEmail,
                     FullName = "System Administrator",
                     Name = "System Administrator",
                     EmailConfirmed = true,
@@ -245,7 +266,9 @@ try
                 }
                 else
                 {
-                    logger.Error($"Failed to create admin user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+                    var errors = string.Join(", ", result.Errors.Select(e => e.Description));
+                    logger.Error($"Failed to create admin user: {errors}");
+                    throw new InvalidOperationException($"Failed to create admin user: {errors}");
                 }
             }
 

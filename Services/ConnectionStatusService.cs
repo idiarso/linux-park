@@ -9,63 +9,96 @@ using ParkIRC.Hubs;
 using System.IO;
 using Microsoft.Extensions.Configuration;
 using ParkIRC.Data;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Timer = System.Threading.Timer;
 using System.Security.AccessControl;
+using ParkIRC.Models;
+using DirectShowLib;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace ParkIRC.Services
 {
-    public class ConnectionStatusService : IHostedService, IDisposable
+    public sealed class ConnectionStatusService : IHostedService, IAsyncDisposable
     {
         private readonly ILogger<ConnectionStatusService> _logger;
         private readonly IHubContext<ParkingHub> _hubContext;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly IConfiguration _configuration;
         private readonly PrintService _printService;
-        private Timer _timer;
-        private bool _isRunning = false;
+        private Timer? _timer;
+        private bool _isRunning;
+        private bool _disposed;
+        private readonly SemaphoreSlim _statusLock = new(1, 1);
+        private readonly int _checkInterval;
+        private readonly ApplicationDbContext _dbContext;
 
         public ConnectionStatusService(
             ILogger<ConnectionStatusService> logger,
             IHubContext<ParkingHub> hubContext,
             IServiceScopeFactory scopeFactory,
             IConfiguration configuration,
-            PrintService printService)
+            PrintService printService,
+            ApplicationDbContext dbContext)
         {
-            _logger = logger;
-            _hubContext = hubContext;
-            _scopeFactory = scopeFactory;
-            _configuration = configuration;
-            _printService = printService;
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
+            _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _printService = printService ?? throw new ArgumentNullException(nameof(printService));
+            _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+            
+            _checkInterval = _configuration.GetValue<int>("Monitoring:CheckInterval", 60);
+            _isRunning = false;
+            _disposed = false;
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(ConnectionStatusService));
+            }
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
-            _logger.LogInformation("Connection Status Service is starting.");
+            ThrowIfDisposed();
+            _logger.LogInformation("Connection Status Service is starting");
             
-            // Cek interval monitoring dari configuration (default 60 detik)
-            int interval = _configuration.GetValue<int>("Monitoring:CheckInterval", 60);
-            
-            _timer = new Timer(CheckStatus, null, TimeSpan.Zero, TimeSpan.FromSeconds(interval));
+            _timer = new Timer(
+                async state => await CheckStatusAsync(state).ConfigureAwait(false),
+                null,
+                TimeSpan.Zero,
+                TimeSpan.FromSeconds(_checkInterval));
             
             return Task.CompletedTask;
         }
 
-        private async void CheckStatus(object state)
+        private async Task CheckStatusAsync(object? state)
         {
-            if (_isRunning) return;
-            
-            _isRunning = true;
-            
+            if (_disposed || _isRunning)
+                return;
+
+            await _statusLock.WaitAsync();
             try
             {
+                _isRunning = true;
                 _logger.LogDebug("Checking system connection status...");
                 
-                var systemStatus = await GetSystemStatus();
+                var systemStatus = await GetSystemStatusAsync();
                 
-                // Kirim status ke semua client
-                await _hubContext.Clients.All.SendAsync("ReceiveSystemStatus", systemStatus);
+                await _hubContext.Clients.All.SendAsync(
+                    "ReceiveSystemStatus",
+                    systemStatus,
+                    CancellationToken.None);
                 
-                _logger.LogDebug($"System status: DB={systemStatus.Database}, Printer={systemStatus.Printer}, Camera={systemStatus.Camera}");
+                _logger.LogDebug(
+                    "System status: DB={Database}, Printer={Printer}, Camera={Camera}",
+                    systemStatus.Database,
+                    systemStatus.Printer,
+                    systemStatus.Camera);
             }
             catch (Exception ex)
             {
@@ -74,91 +107,193 @@ namespace ParkIRC.Services
             finally
             {
                 _isRunning = false;
+                _statusLock.Release();
             }
         }
         
-        public async Task<SystemStatusDto> GetSystemStatus()
+        public async Task<SystemStatusDto> GetSystemStatusAsync()
         {
+            ThrowIfDisposed();
+
             var status = new SystemStatusDto
             {
-                Timestamp = DateTime.Now
+                Timestamp = DateTime.UtcNow
             };
             
             // Check database connection
-            using (var scope = _scopeFactory.CreateScope())
-            {
-                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                status.Database = await CheckDatabaseAsync(dbContext);
-            }
+            status.Database = await CheckDatabaseConnectionAsync();
             
             // Check printer
-            status.Printer = CheckPrinter();
+            status.Printer = await CheckPrinterConnectionAsync();
             
             // Check camera
-            status.Camera = CheckCamera();
+            status.Camera = await CheckCameraConnectionAsync();
             
             // Get system resources
-            GetSystemResources(status);
+            await GetSystemResourcesAsync(status);
             
             return status;
         }
 
-        private async Task<bool> CheckDatabaseAsync(ApplicationDbContext dbContext)
+        private async Task<bool> CheckDatabaseConnectionAsync()
         {
             try
             {
-                return await dbContext.Database.CanConnectAsync();
+                return await _dbContext.Database.CanConnectAsync();
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error checking database connection");
                 return false;
             }
         }
 
-        private bool CheckPrinter()
+        private async Task<bool> CheckPrinterConnectionAsync()
         {
             try
             {
-                // Check printer using CUPS
-                var processInfo = new ProcessStartInfo
+                // Check printer using CUPS on Linux/macOS or WMI on Windows
+                if (OperatingSystem.IsWindows())
                 {
-                    FileName = "lpstat",
-                    Arguments = "-p",
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                
-                using (var process = Process.Start(processInfo))
+                    return await Task.Run(() =>
+                    {
+                        var processInfo = new ProcessStartInfo
+                        {
+                            FileName = "wmic",
+                            Arguments = "printer get name",
+                            RedirectStandardOutput = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        
+                        using var process = Process.Start(processInfo);
+                        if (process == null)
+                            return false;
+
+                        string output = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+                        return !string.IsNullOrEmpty(output) && output.Contains("\n");
+                    });
+                }
+                else
                 {
-                    string output = process.StandardOutput.ReadToEnd();
-                    return !string.IsNullOrEmpty(output) && !output.Contains("no destinations");
+                    return await Task.Run(() =>
+                    {
+                        var processInfo = new ProcessStartInfo
+                        {
+                            FileName = "lpstat",
+                            Arguments = "-p",
+                            RedirectStandardOutput = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        
+                        using var process = Process.Start(processInfo);
+                        if (process == null)
+                            return false;
+
+                        string output = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+                        return !string.IsNullOrEmpty(output) && !output.Contains("no destinations");
+                    });
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error checking printer status");
                 return false;
             }
         }
 
-        private bool CheckCamera()
+        private async Task<bool> CheckCameraConnectionAsync()
         {
             try
             {
-                // Implementasi check kamera sesuai dengan hardware yang digunakan
-                // Contoh sederhana: cek apakah folder gambar bisa diakses
-                var uploadsPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-                return Directory.Exists(uploadsPath) && new DirectoryInfo(uploadsPath).GetAccessControl() != null;
+                // Check camera using DirectShow
+                if (OperatingSystem.IsWindows())
+                {
+                    return await Task.Run(() =>
+                    {
+                        var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
+                        return devices.Length > 0;
+                    });
+                }
+                else
+                {
+                    // For Linux/macOS, check if video device exists
+                    return await Task.Run(() =>
+                    {
+                        var processInfo = new ProcessStartInfo
+                        {
+                            FileName = "ls",
+                            Arguments = "/dev/video*",
+                            RedirectStandardOutput = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        
+                        using var process = Process.Start(processInfo);
+                        if (process == null)
+                            return false;
+
+                        string output = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+                        return !string.IsNullOrEmpty(output) && output.Contains("video");
+                    });
+                }
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error checking camera status");
                 return false;
             }
         }
         
-        private void GetSystemResources(SystemStatusDto status)
+        private async Task GetSystemResourcesAsync(SystemStatusDto status)
         {
+            ArgumentNullException.ThrowIfNull(status);
+
             try
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    await GetWindowsSystemResourcesAsync(status);
+                }
+                else
+                {
+                    await GetLinuxSystemResourcesAsync(status);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting system resources");
+            }
+        }
+
+        private async Task GetWindowsSystemResourcesAsync(SystemStatusDto status)
+        {
+            await Task.Run(() =>
+            {
+                var driveInfo = new DriveInfo(Path.GetPathRoot(Directory.GetCurrentDirectory()) ?? "C:");
+                status.DiskTotal = FormatBytes(driveInfo.TotalSize);
+                status.DiskUsed = FormatBytes(driveInfo.TotalSize - driveInfo.AvailableFreeSpace);
+                status.DiskFree = FormatBytes(driveInfo.AvailableFreeSpace);
+                status.DiskUsagePercent = $"{((double)(driveInfo.TotalSize - driveInfo.AvailableFreeSpace) / driveInfo.TotalSize * 100):F1}%";
+
+                var performanceCounter = new PerformanceCounter("Memory", "Available MBytes", true);
+                var totalMemory = new Microsoft.VisualBasic.Devices.ComputerInfo().TotalPhysicalMemory;
+                var availableMemory = performanceCounter.NextValue() * 1024 * 1024;
+                var usedMemory = totalMemory - availableMemory;
+
+                status.MemoryTotal = FormatBytes(totalMemory);
+                status.MemoryUsed = FormatBytes(usedMemory);
+                status.MemoryFree = FormatBytes(availableMemory);
+            });
+        }
+
+        private async Task GetLinuxSystemResourcesAsync(SystemStatusDto status)
+        {
+            await Task.Run(() =>
             {
                 // Get disk usage
                 var diskProcess = new ProcessStartInfo
@@ -172,17 +307,21 @@ namespace ParkIRC.Services
                 
                 using (var process = Process.Start(diskProcess))
                 {
-                    string output = process.StandardOutput.ReadToEnd();
-                    var lines = output.Split('\n');
-                    if (lines.Length > 1)
+                    if (process != null)
                     {
-                        var parts = lines[1].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length > 4)
+                        string output = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+                        var lines = output.Split('\n');
+                        if (lines.Length > 1)
                         {
-                            status.DiskTotal = parts[1];
-                            status.DiskUsed = parts[2];
-                            status.DiskFree = parts[3];
-                            status.DiskUsagePercent = parts[4];
+                            var parts = lines[1].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length > 4)
+                            {
+                                status.DiskTotal = parts[1];
+                                status.DiskUsed = parts[2];
+                                status.DiskFree = parts[3];
+                                status.DiskUsagePercent = parts[4];
+                            }
                         }
                     }
                 }
@@ -199,42 +338,111 @@ namespace ParkIRC.Services
                 
                 using (var process = Process.Start(memProcess))
                 {
-                    string output = process.StandardOutput.ReadToEnd();
-                    var lines = output.Split('\n');
-                    if (lines.Length > 1)
+                    if (process != null)
                     {
-                        var parts = lines[1].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                        if (parts.Length > 6)
+                        string output = process.StandardOutput.ReadToEnd();
+                        process.WaitForExit();
+                        var lines = output.Split('\n');
+                        if (lines.Length > 1)
                         {
-                            status.MemoryTotal = parts[1];
-                            status.MemoryUsed = parts[2];
-                            status.MemoryFree = parts[3];
+                            var parts = lines[1].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length > 6)
+                            {
+                                status.MemoryTotal = parts[1];
+                                status.MemoryUsed = parts[2];
+                                status.MemoryFree = parts[3];
+                            }
                         }
                     }
                 }
+            });
+        }
+
+        private static string FormatBytes(double bytes)
+        {
+            string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+            int order = 0;
+            while (bytes >= 1024 && order < sizes.Length - 1)
+            {
+                order++;
+                bytes /= 1024;
+            }
+            return $"{bytes:0.##} {sizes[order]}";
+        }
+
+        public async Task StopAsync(CancellationToken cancellationToken)
+        {
+            ThrowIfDisposed();
+            _logger.LogInformation("Connection Status Service is stopping");
+            
+            if (_timer != null)
+            {
+                await _timer.DisposeAsync();
+                _timer = null;
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (!_disposed)
+            {
+                _disposed = true;
+
+                if (_timer != null)
+                {
+                    await _timer.DisposeAsync();
+                    _timer = null;
+                }
+
+                _statusLock.Dispose();
+                GC.SuppressFinalize(this);
+            }
+        }
+
+        public async Task<SystemStatus> GetSystemStatus()
+        {
+            var status = new SystemStatus
+            {
+                IsOnline = true,
+                LastChecked = DateTime.UtcNow,
+                Components = new Dictionary<string, bool>()
+            };
+
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+                // Check database connection
+                status.Components["Database"] = await dbContext.Database.CanConnectAsync();
+
+                // Check hardware components
+                var hardwareStatus = await dbContext.HardwareStatuses
+                    .OrderByDescending(h => h.LastChecked)
+                    .FirstOrDefaultAsync();
+
+                if (hardwareStatus != null)
+                {
+                    status.Components["Camera"] = hardwareStatus.IsCameraOnline;
+                    status.Components["Gate"] = hardwareStatus.IsGateOnline;
+                    status.Components["Printer"] = hardwareStatus.IsPrinterOnline;
+                    status.Components["LoopDetector"] = hardwareStatus.IsLoopDetectorOnline;
+                }
+
+                // Overall system status is online only if all components are online
+                status.IsOnline = status.Components.All(c => c.Value);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting system resources");
+                _logger.LogError(ex, "Error checking system status");
+                status.IsOnline = false;
             }
-        }
 
-        public Task StopAsync(CancellationToken cancellationToken)
-        {
-            _logger.LogInformation("Connection Status Service is stopping.");
-            
-            _timer?.Change(Timeout.Infinite, 0);
-            
-            return Task.CompletedTask;
-        }
-
-        public void Dispose()
-        {
-            _timer?.Dispose();
+            return status;
         }
     }
     
-    public class SystemStatusDto
+    public sealed class SystemStatusDto
     {
         public DateTime Timestamp { get; set; }
         public bool Database { get; set; }
@@ -243,13 +451,13 @@ namespace ParkIRC.Services
         public bool IsConnected => Database && Printer && Camera;
         
         // System resources
-        public string DiskTotal { get; set; }
-        public string DiskUsed { get; set; }
-        public string DiskFree { get; set; }
-        public string DiskUsagePercent { get; set; }
+        public string DiskTotal { get; set; } = string.Empty;
+        public string DiskUsed { get; set; } = string.Empty;
+        public string DiskFree { get; set; } = string.Empty;
+        public string DiskUsagePercent { get; set; } = string.Empty;
         
-        public string MemoryTotal { get; set; }
-        public string MemoryUsed { get; set; }
-        public string MemoryFree { get; set; }
+        public string MemoryTotal { get; set; } = string.Empty;
+        public string MemoryUsed { get; set; } = string.Empty;
+        public string MemoryFree { get; set; } = string.Empty;
     }
 }

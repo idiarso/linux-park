@@ -34,6 +34,9 @@ namespace ParkIRC.Controllers
         private readonly IParkingService _parkingService;
         private readonly PrintService _printService;
         private readonly IWebHostEnvironment _webHostEnvironment;
+        private readonly IConfiguration _configuration;
+        private readonly IRedundancyService _redundancyService;
+        private HardwareManager? _hardwareManager;
 
         public ParkingController(
             ApplicationDbContext context,
@@ -41,7 +44,9 @@ namespace ParkIRC.Controllers
             IParkingService parkingService,
             IHubContext<ParkingHub> hubContext,
             PrintService printService,
-            IWebHostEnvironment webHostEnvironment)
+            IWebHostEnvironment webHostEnvironment,
+            IConfiguration configuration,
+            IRedundancyService redundancyService)
         {
             _context = context;
             _logger = logger;
@@ -49,6 +54,8 @@ namespace ParkIRC.Controllers
             _hubContext = hubContext;
             _printService = printService;
             _webHostEnvironment = webHostEnvironment;
+            _configuration = configuration;
+            _redundancyService = redundancyService;
         }
         
         [ResponseCache(Duration = 60)]
@@ -218,6 +225,12 @@ namespace ParkIRC.Controllers
                 // Update dashboard
                 await _hubContext.Clients.All.SendAsync("UpdateDashboard");
 
+                // Initialize hardware if not already initialized
+                var hardwareManager = GetHardwareManager();
+
+                // Use hardware manager
+                await hardwareManager.OpenEntryGate();
+
                 return Json(new { success = true, message = "Kendaraan berhasil dicatat" });
             }
             catch (Exception ex)
@@ -369,6 +382,12 @@ namespace ParkIRC.Controllers
                 }
 
                 _logger.LogInformation("Vehicle {VehicleNumber} entered the parking lot.", entryModel.VehicleNumber);
+
+                // Initialize hardware if not already initialized
+                var hardwareManager = GetHardwareManager();
+
+                // Use hardware manager
+                await hardwareManager.OpenEntryGate();
 
                 return Ok(new
                 {
@@ -563,7 +582,7 @@ namespace ParkIRC.Controllers
                 });
 
                 // Open exit gate
-                var hardwareManager = HardwareManager.Instance;
+                var hardwareManager = GetHardwareManager();
                 hardwareManager.OpenExitGate();
 
                 // Notify clients if SignalR hub is available
@@ -1997,6 +2016,18 @@ namespace ParkIRC.Controllers
         {
             public string VehicleNumber { get; set; } = string.Empty;
             public string PaymentMethod { get; set; } = "Cash";
+        }
+
+        private HardwareManager GetHardwareManager()
+        {
+            if (_hardwareManager == null)
+            {
+                var loggerFactory = HttpContext.RequestServices.GetRequiredService<ILoggerFactory>();
+                var hardwareLogger = loggerFactory.CreateLogger<HardwareManager>();
+                HardwareManager.Initialize(hardwareLogger, _configuration, _redundancyService as IHardwareRedundancyService);
+                _hardwareManager = HardwareManager.Instance;
+            }
+            return _hardwareManager;
         }
     }
 }

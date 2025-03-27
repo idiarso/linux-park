@@ -10,58 +10,86 @@ using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
 using System.Drawing;
 using System.Drawing.Imaging;
+using Microsoft.Extensions.Configuration;
 
 namespace ParkIRC.Services
 {
-    public interface ICameraService
+    public interface ICameraService : IAsyncDisposable
     {
         Task<bool> InitializeAsync();
         Task<string> CaptureImageAsync();
         Task<CameraSettings> GetSettingsAsync();
         Task<bool> UpdateSettingsAsync(CameraSettings settings);
         Task<bool> TestConnectionAsync();
+        bool IsConnected();
     }
 
-    public class CameraService : ICameraService, IDisposable
+    public class CameraService : ICameraService, IAsyncDisposable
     {
         private readonly ILogger<CameraService> _logger;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _context;
         private bool _isInitialized;
-        private VideoCapture _videoCapture;
-        private string _cameraType;
-        private CameraSettings _currentSettings;
+        private VideoCapture? _videoCapture;
+        private readonly string _cameraType;
+        private CameraSettings? _currentSettings;
         private readonly string _imageSavePath;
+        private bool _disposed;
+        private readonly SemaphoreSlim _initLock = new(1, 1);
+        private readonly SemaphoreSlim _captureLock = new(1, 1);
 
-        public CameraService(ILogger<CameraService> logger, IConfiguration configuration, ApplicationDbContext context)
+        public CameraService(
+            ILogger<CameraService> logger,
+            IConfiguration configuration,
+            ApplicationDbContext context)
         {
-            _logger = logger;
-            _configuration = configuration;
-            _context = context;
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            
             _isInitialized = false;
             _cameraType = configuration.GetValue<string>("Camera:Type", "Webcam");
             _imageSavePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "camera");
             Directory.CreateDirectory(_imageSavePath);
         }
 
-
-
         public bool IsConnected()
         {
+            ThrowIfDisposed();
             return _isInitialized;
         }
 
-        public void Dispose()
+        public async ValueTask DisposeAsync()
         {
-            if (_videoCapture != null)
-            {        
-                _videoCapture.Dispose();
-                _videoCapture = null;
+            if (!_disposed)
+            {
+                _disposed = true;
+
+                if (_videoCapture != null)
+                {
+                    _videoCapture.Dispose();
+                    _videoCapture = null;
+                }
+
+                _initLock.Dispose();
+                _captureLock.Dispose();
+            }
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(CameraService));
             }
         }
 
         public async Task<bool> InitializeAsync()
         {
+            ThrowIfDisposed();
+
+            // Use SemaphoreSlim to prevent multiple simultaneous initializations
+            await _initLock.WaitAsync();
             try
             {
                 _logger.LogInformation("Initializing camera service...");
@@ -72,7 +100,7 @@ namespace ParkIRC.Services
                     int deviceIndex = _configuration.GetValue<int>("Camera:DeviceIndex", 0);
                     _videoCapture = new VideoCapture(deviceIndex);
                     
-                    if (!_videoCapture.IsOpened)
+                    if (_videoCapture == null || !_videoCapture.IsOpened)
                     {
                         throw new InvalidOperationException("No video devices found");
                     }
@@ -89,21 +117,34 @@ namespace ParkIRC.Services
                 _logger.LogError(ex, "Failed to initialize camera service");
                 return false;
             }
+            finally
+            {
+                _initLock.Release();
+            }
         }
 
         public async Task<string> CaptureImageAsync()
         {
+            ThrowIfDisposed();
+
             if (!_isInitialized)
             {
                 throw new InvalidOperationException("Camera service is not initialized");
             }
 
+            // Use SemaphoreSlim to prevent multiple simultaneous captures
+            await _captureLock.WaitAsync();
             try
             {
                 _logger.LogInformation("Capturing image...");
                 
                 if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (_videoCapture == null)
+                    {
+                        throw new InvalidOperationException("Video capture device is not initialized");
+                    }
+
                     using var frame = _videoCapture.QueryFrame();
                     if (frame == null)
                     {
@@ -113,7 +154,7 @@ namespace ParkIRC.Services
                     string fileName = $"capture_{DateTime.Now:yyyyMMddHHmmss}.jpg";
                     string filePath = Path.Combine(_imageSavePath, fileName);
                     
-                    frame.Save(filePath);
+                    await Task.Run(() => frame.Save(filePath));
                     return filePath;
                 }
                 else
@@ -126,14 +167,39 @@ namespace ParkIRC.Services
                 _logger.LogError(ex, "Failed to capture image");
                 throw;
             }
+            finally
+            {
+                _captureLock.Release();
+            }
         }
 
         public async Task<CameraSettings> GetSettingsAsync()
         {
+            ThrowIfDisposed();
+
             try
             {
-                var settings = await _context.CameraSettings.FirstOrDefaultAsync();
-                return settings ?? new CameraSettings();
+                var settings = await _context.CameraSettings
+                    .OrderByDescending(s => s.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                return settings ?? new CameraSettings
+                {
+                    ProfileName = "Default",
+                    ResolutionWidth = 1280,
+                    ResolutionHeight = 720,
+                    ROI_X = 0,
+                    ROI_Y = 0,
+                    ROI_Width = 640,
+                    ROI_Height = 480,
+                    Exposure = 100,
+                    Gain = 1.0,
+                    Brightness = 50,
+                    Contrast = 50,
+                    LightingCondition = "Normal",
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
             }
             catch (Exception ex)
             {
@@ -144,10 +210,23 @@ namespace ParkIRC.Services
 
         public async Task<bool> UpdateSettingsAsync(CameraSettings settings)
         {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(settings);
+
             try
             {
+                settings.ModifiedAt = DateTime.UtcNow;
                 _context.CameraSettings.Update(settings);
                 await _context.SaveChangesAsync();
+
+                // Update current settings if initialized
+                if (_isInitialized && _videoCapture != null)
+                {
+                    _currentSettings = settings;
+                    _videoCapture.Set(CapProp.FrameWidth, settings.ResolutionWidth);
+                    _videoCapture.Set(CapProp.FrameHeight, settings.ResolutionHeight);
+                }
+
                 return true;
             }
             catch (Exception ex)
@@ -159,6 +238,8 @@ namespace ParkIRC.Services
 
         public async Task<bool> TestConnectionAsync()
         {
+            ThrowIfDisposed();
+
             try
             {
                 _logger.LogInformation("Testing camera connection...");
@@ -166,14 +247,14 @@ namespace ParkIRC.Services
                 if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
                 {
                     int deviceIndex = _configuration.GetValue<int>("Camera:DeviceIndex", 0);
-                    using var testCapture = new VideoCapture(deviceIndex);
                     
+                    using var testCapture = new VideoCapture(deviceIndex);
                     if (!testCapture.IsOpened)
                     {
                         return false;
                     }
 
-                    using var frame = testCapture.QueryFrame();
+                    using var frame = await Task.Run(() => testCapture.QueryFrame());
                     return frame != null;
                 }
                 else

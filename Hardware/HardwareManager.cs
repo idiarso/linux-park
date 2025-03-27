@@ -9,8 +9,10 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Runtime.InteropServices;
 using DirectShowLib;
-using Npgsql;
 using static DirectShowLib.DsGuid;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
+using ParkIRC.Services;
 
 namespace ParkIRC.Hardware
 {
@@ -20,54 +22,30 @@ namespace ParkIRC.Hardware
     /// - Gate controller (via serial port)
     /// - Thermal printer
     /// </summary>
-    public class HardwareManager : IDisposable
+    public class HardwareManager : IHardwareManager, IDisposable
     {
-        private SerialPort _serialPort;
-        private IFilterGraph2 _graphBuilder;
-        private IMediaControl _mediaControl;
-        private IBaseFilter _videoDevice;
-        private ISampleGrabber _sampleGrabber;
-        private bool _isInitialized = false;
-        private string _basePath;
-        private bool _disposed = false;
-        private static readonly object _lock = new object();
-        private static HardwareManager _instance;
+        private static volatile HardwareManager? _instance;
+        private static readonly object _syncRoot = new object();
 
-        // Configuration values
-        private string _cameraType;
-        private string _cameraIp;
-        private string _cameraUsername;
-        private string _cameraPassword;
-        private int _cameraPort;
-        private string _cameraResolution;
-        private int _webcamDeviceIndex;
-        private string _comPort;
-        private int _baudRate;
-        private string _imageBasePath;
-        private string _entrySubfolder;
-        private string _exitSubfolder;
-        private string _filenameFormat;
+        private static ILogger<HardwareManager>? _loggerInstance;
+        private static IConfiguration? _configurationInstance;
+        private static IHardwareRedundancyService? _redundancyServiceInstance;
 
-        // Camera event delegate
-        public delegate void ImageCapturedEventHandler(object sender, ImageCapturedEventArgs e);
-        public event ImageCapturedEventHandler ImageCaptured;
-
-        // Serial event delegate
-        public delegate void CommandReceivedEventHandler(object sender, CommandReceivedEventArgs e);
-        public event CommandReceivedEventHandler CommandReceived;
-
-        // Singleton implementation
         public static HardwareManager Instance
         {
             get
             {
                 if (_instance == null)
                 {
-                    lock (_lock)
+                    lock (_syncRoot)
                     {
                         if (_instance == null)
                         {
-                            _instance = new HardwareManager();
+                            if (_loggerInstance == null || _configurationInstance == null || _redundancyServiceInstance == null)
+                            {
+                                throw new InvalidOperationException("HardwareManager not initialized. Call Initialize first.");
+                            }
+                            _instance = new HardwareManager(_loggerInstance, _configurationInstance, _redundancyServiceInstance);
                         }
                     }
                 }
@@ -75,78 +53,198 @@ namespace ParkIRC.Hardware
             }
         }
 
-        private HardwareManager()
+        public static void Initialize(
+            ILogger<HardwareManager> logger,
+            IConfiguration configuration,
+            IHardwareRedundancyService redundancyService)
         {
-            LoadConfiguration();
+            _loggerInstance = logger;
+            _configurationInstance = configuration;
+            _redundancyServiceInstance = redundancyService;
         }
 
-        /// <summary>
-        /// Initializes hardware connections
-        /// </summary>
-        public bool Initialize()
+        private readonly ILogger<HardwareManager> _logger;
+        private readonly IConfiguration _configuration;
+        private readonly IHardwareRedundancyService _redundancyService;
+        private SerialPort? _serialPort;
+        private IFilterGraph2? _graphBuilder;
+        private IMediaControl? _mediaControl;
+        private IBaseFilter? _videoDevice;
+        private ISampleGrabber? _sampleGrabber;
+        private bool _isInitialized;
+        private bool _disposedValue;
+        private readonly SemaphoreSlim _initLock = new(1, 1);
+        private readonly SemaphoreSlim _captureLock = new(1, 1);
+        private readonly SemaphoreSlim _serialLock = new(1, 1);
+
+        // Configuration values
+        private readonly string _cameraType;
+        private readonly string _cameraIp;
+        private readonly string _cameraUsername;
+        private readonly string _cameraPassword;
+        private readonly int _cameraPort;
+        private readonly string _cameraResolution;
+        private readonly int _webcamDeviceIndex;
+        private readonly string _comPort;
+        private readonly int _baudRate;
+        private readonly string _imageBasePath;
+        private readonly string _entrySubfolder;
+        private readonly string _exitSubfolder;
+        private readonly string _filenameFormat;
+
+        // Events
+        public event EventHandler<ImageCapturedEventArgs>? ImageCaptured;
+        public event EventHandler<CommandReceivedEventArgs>? CommandReceived;
+
+        public HardwareManager(
+            ILogger<HardwareManager> logger,
+            IConfiguration configuration,
+            IHardwareRedundancyService redundancyService)
         {
+            ArgumentNullException.ThrowIfNull(logger);
+            ArgumentNullException.ThrowIfNull(configuration);
+            ArgumentNullException.ThrowIfNull(redundancyService);
+
+            _logger = logger;
+            _configuration = configuration;
+            _redundancyService = redundancyService;
+            _isInitialized = false;
+            _disposedValue = false;
+
+            // Load configuration from appsettings.json
+            _cameraType = _configuration["Hardware:Camera:Type"] ?? "Webcam";
+            _cameraIp = _configuration["Hardware:Camera:IP"] ?? "127.0.0.1";
+            _cameraUsername = _configuration["Hardware:Camera:Username"] ?? "admin";
+            _cameraPassword = _configuration["Hardware:Camera:Password"] ?? "admin";
+            _cameraPort = int.Parse(_configuration["Hardware:Camera:Port"] ?? "8080");
+            _cameraResolution = _configuration["Hardware:Camera:Resolution"] ?? "640x480";
+            _webcamDeviceIndex = int.Parse(_configuration["Hardware:Camera:WebcamIndex"] ?? "0");
+            _comPort = _configuration["Hardware:Gate:ComPort"] ?? "COM1";
+            _baudRate = int.Parse(_configuration["Hardware:Gate:BaudRate"] ?? "9600");
+            _imageBasePath = _configuration["Storage:ImagePath"] ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Images");
+            _entrySubfolder = _configuration["Storage:EntrySubfolder"] ?? "Entry";
+            _exitSubfolder = _configuration["Storage:ExitSubfolder"] ?? "Exit";
+            _filenameFormat = "{0}_{1:yyyyMMdd_HHmmss}";
+        }
+
+        private void ThrowIfDisposed()
+        {
+            if (_disposedValue)
+            {
+                throw new ObjectDisposedException(nameof(HardwareManager));
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (!_disposedValue)
+            {
+                _disposedValue = true;
+
+                await DisposeAsyncCore().ConfigureAwait(false);
+
+                _initLock.Dispose();
+                _captureLock.Dispose();
+                _serialLock.Dispose();
+
+                GC.SuppressFinalize(this);
+            }
+        }
+
+        protected virtual async ValueTask DisposeAsyncCore()
+        {
+            try
+            {
+                if (_mediaControl != null)
+                {
+                    _mediaControl.Stop();
+                    Marshal.ReleaseComObject(_mediaControl);
+                    _mediaControl = null;
+                }
+
+                if (_videoDevice != null)
+                {
+                    Marshal.ReleaseComObject(_videoDevice);
+                    _videoDevice = null;
+                }
+
+                if (_sampleGrabber != null)
+                {
+                    Marshal.ReleaseComObject(_sampleGrabber);
+                    _sampleGrabber = null;
+                }
+
+                if (_graphBuilder != null)
+                {
+                    Marshal.ReleaseComObject(_graphBuilder);
+                    _graphBuilder = null;
+                }
+
+                if (_serialPort != null)
+                {
+                    if (_serialPort.IsOpen)
+                    {
+                        _serialPort.Close();
+                    }
+                    _serialPort.Dispose();
+                    _serialPort = null;
+                }
+
+                await Task.CompletedTask; // For future async cleanup
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during async disposal");
+            }
+        }
+
+        public async Task<bool> InitializeAsync()
+        {
+            ThrowIfDisposed();
+
+            await _initLock.WaitAsync();
             try
             {
                 if (_isInitialized)
                     return true;
 
-                InitializeSerialPort();
-                InitializeCamera();
-                EnsureDirectoriesExist();
-                
-                _isInitialized = true;
-                Console.WriteLine("Hardware manager initialized successfully");
-                return true;
+                bool success = await _redundancyService.ExecuteWithRetryAsync<HardwareManager>(
+                    async () =>
+                    {
+                        await InitializeSerialPortAsync();
+                        await InitializeCameraAsync();
+                        await EnsureDirectoriesExistAsync();
+                        return true;
+                    },
+                    "Initialize",
+                    this);
+
+                if (success)
+                {
+                    _isInitialized = true;
+                    _logger.LogInformation("Hardware manager initialized successfully");
+                }
+                else
+                {
+                    _logger.LogError("Failed to initialize hardware after retries");
+                }
+
+                return success;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to initialize hardware: {ex.Message}");
+                _logger.LogError(ex, "Failed to initialize hardware");
                 return false;
             }
-        }
-
-        /// <summary>
-        /// Loads configuration from INI files
-        /// </summary>
-        private void LoadConfiguration()
-        {
-            try
+            finally
             {
-                // Load camera settings
-                string cameraConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config", "camera.ini");
-                var cameraConfig = ParseIniFile(cameraConfigPath);
-                
-                _cameraType = GetIniValue(cameraConfig, "Camera", "Type", "Webcam");
-                _cameraIp = GetIniValue(cameraConfig, "Camera", "IP", "127.0.0.1");
-                _cameraUsername = GetIniValue(cameraConfig, "Camera", "Username", "admin");
-                _cameraPassword = GetIniValue(cameraConfig, "Camera", "Password", "admin");
-                _cameraPort = int.Parse(GetIniValue(cameraConfig, "Camera", "Port", "8080"));
-                _cameraResolution = GetIniValue(cameraConfig, "Camera", "Resolution", "640x480");
-                _webcamDeviceIndex = int.Parse(GetIniValue(cameraConfig, "Webcam", "Device_Index", "0"));
-
-                _imageBasePath = GetIniValue(cameraConfig, "Storage", "Base_Path", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Images"));
-                _entrySubfolder = GetIniValue(cameraConfig, "Storage", "Entry_Subfolder", "Entry");
-                _exitSubfolder = GetIniValue(cameraConfig, "Storage", "Exit_Subfolder", "Exit");
-                _filenameFormat = GetIniValue(cameraConfig, "Storage", "Filename_Format", "{0}_{1:yyyyMMdd_HHmmss}");
-
-                // Load gate settings
-                string gateConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config", "gate.ini");
-                var gateConfig = ParseIniFile(gateConfigPath);
-                
-                _comPort = GetIniValue(gateConfig, "Gate", "COM_Port", "COM1");
-                _baudRate = int.Parse(GetIniValue(gateConfig, "Gate", "Baud_Rate", "9600"));
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error loading configuration: {ex.Message}");
+                _initLock.Release();
             }
         }
 
-        /// <summary>
-        /// Initializes serial port for communication with gate controller
-        /// </summary>
-        private void InitializeSerialPort()
+        private async Task InitializeSerialPortAsync()
         {
+            await _serialLock.WaitAsync();
             try
             {
                 _serialPort = new SerialPort(_comPort, _baudRate)
@@ -159,23 +257,31 @@ namespace ParkIRC.Hardware
                 };
 
                 _serialPort.DataReceived += SerialPort_DataReceived;
-                _serialPort.Open();
-                Console.WriteLine($"Connected to serial port {_comPort}");
+                
+                await Task.Run(() => _serialPort.Open());
+                _logger.LogInformation("Connected to serial port {Port}", _comPort);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to initialize serial port: {ex.Message}");
+                _logger.LogError(ex, "Failed to initialize serial port {Port}", _comPort);
                 throw;
+            }
+            finally
+            {
+                _serialLock.Release();
             }
         }
 
-        /// <summary>
-        /// Initializes camera device (webcam or IP camera)
-        /// </summary>
-        private async Task InitializeCamera()
+        private async Task InitializeCameraAsync()
         {
             try
             {
+                if (_redundancyService.IsUsingBackupDevice("camera"))
+                {
+                    await InitializeBackupCameraAsync();
+                    return;
+                }
+
                 _graphBuilder = (IFilterGraph2)new FilterGraph();
                 _mediaControl = (IMediaControl)_graphBuilder;
 
@@ -189,7 +295,7 @@ namespace ParkIRC.Hardware
                 _videoDevice = await GetFirstVideoCaptureDeviceAsync();
                 if (_videoDevice == null)
                 {
-                    throw new Exception("No video capture device found");
+                    throw new InvalidOperationException("No video capture device found");
                 }
 
                 hr = _graphBuilder.AddFilter(_videoDevice, "Video Capture Device");
@@ -217,365 +323,314 @@ namespace ParkIRC.Hardware
             }
             catch (Exception ex)
             {
-                throw new Exception("Error initializing camera", ex);
-            }
-        }
-
-        private async Task<IBaseFilter> GetFirstVideoCaptureDeviceAsync()
-        {
-            var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
-            if (devices.Length == 0)
-            {
-                return null;
-            }
-
-            var device = devices[0];
-            object source;
-            var iid = typeof(IBaseFilter).GUID;
-            device.Mon.BindToObject(null, null, ref iid, out source);
-            return (IBaseFilter)source;
-        }
-
-        /// <summary>
-        /// Creates necessary directories for image storage
-        /// </summary>
-        private void EnsureDirectoriesExist()
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.Combine(_imageBasePath, _entrySubfolder));
-                Directory.CreateDirectory(Path.Combine(_imageBasePath, _exitSubfolder));
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to create directories: {ex.Message}");
+                _logger.LogError(ex, "Error initializing camera");
                 throw;
             }
         }
 
-        /// <summary>
-        /// Captures image from camera and saves it with the specified ticket ID
-        /// </summary>
+        private async Task InitializeBackupCameraAsync()
+        {
+            // Implementation for backup camera initialization
+            // This could be an IP camera or a different webcam
+            _logger.LogInformation("Initializing backup camera");
+            // Add backup camera initialization logic here
+        }
+
+        private async Task<IBaseFilter?> GetFirstVideoCaptureDeviceAsync()
+        {
+            return await Task.Run(() =>
+            {
+                var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
+                if (devices.Length == 0)
+                {
+                    return null;
+                }
+
+                var device = devices[0];
+                object? source = null;
+                var iid = typeof(IBaseFilter).GUID;
+                device.Mon.BindToObject(null, null, ref iid, out source);
+                return source as IBaseFilter;
+            });
+        }
+
+        private async Task EnsureDirectoriesExistAsync()
+        {
+            try
+            {
+                await Task.Run(() =>
+                {
+                    Directory.CreateDirectory(Path.Combine(_imageBasePath, _entrySubfolder));
+                    Directory.CreateDirectory(Path.Combine(_imageBasePath, _exitSubfolder));
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create directories");
+                throw;
+            }
+        }
+
         public async Task<string> CaptureEntryImageAsync(string ticketId)
         {
             return await CaptureImageAsync(ticketId, true);
         }
 
-        /// <summary>
-        /// Captures image for vehicle exit and saves it with the specified ticket ID
-        /// </summary>
         public async Task<string> CaptureExitImageAsync(string ticketId)
         {
             return await CaptureImageAsync(ticketId, false);
         }
 
-        /// <summary>
-        /// Internal method to capture and save image
-        /// </summary>
         private async Task<string> CaptureImageAsync(string ticketId, bool isEntry)
         {
+            ThrowIfDisposed();
+            if (string.IsNullOrEmpty(ticketId))
+                throw new ArgumentException("Value cannot be null or empty.", nameof(ticketId));
+
+            if (!_isInitialized)
+            {
+                throw new InvalidOperationException("Hardware manager is not initialized");
+            }
+
+            await _captureLock.WaitAsync();
             try
             {
-                if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Get buffer size
-                    int bufferSize = 0;
-                    var hr = _sampleGrabber.GetCurrentBuffer(ref bufferSize, IntPtr.Zero);
-                    DsError.ThrowExceptionForHR(hr);
-
-                    // Allocate buffer
-                    var buffer = new byte[bufferSize];
-                    var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-                    try
+                string? imagePath = null;
+                bool success = await _redundancyService.ExecuteWithRetryAsync<HardwareManager>(
+                    async () =>
                     {
-                        // Get frame data
-                        hr = _sampleGrabber.GetCurrentBuffer(ref bufferSize, handle.AddrOfPinnedObject());
-                        DsError.ThrowExceptionForHR(hr);
-
-                        // Get media type
-                        var mediaType = new AMMediaType();
-                        hr = _sampleGrabber.GetConnectedMediaType(mediaType);
-                        DsError.ThrowExceptionForHR(hr);
-
                         try
                         {
-                            var videoInfo = (VideoInfoHeader)Marshal.PtrToStructure(mediaType.formatPtr, typeof(VideoInfoHeader));
-                            var width = videoInfo.BmiHeader.Width;
-                            var height = videoInfo.BmiHeader.Height;
-
-                            // Create filename
-                            string filename = string.Format(_filenameFormat, ticketId, DateTime.Now) + ".jpg";
-                            string targetSubfolder = isEntry ? _entrySubfolder : _exitSubfolder;
-                            string imagePath = Path.Combine(_imageBasePath, targetSubfolder, filename);
-
-                            // Create bitmap
-                            using var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
-                            var bitmapData = bitmap.LockBits(
-                                new Rectangle(0, 0, width, height),
-                                ImageLockMode.WriteOnly,
-                                PixelFormat.Format24bppRgb);
-                            try
+                            if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
                             {
-                                Marshal.Copy(buffer, 0, bitmapData.Scan0, buffer.Length);
+                                if (_sampleGrabber == null)
+                                {
+                                    throw new InvalidOperationException("Camera is not initialized");
+                                }
+
+                                // Get buffer size
+                                int bufferSize = 0;
+                                var hr = _sampleGrabber.GetCurrentBuffer(ref bufferSize, IntPtr.Zero);
+                                DsError.ThrowExceptionForHR(hr);
+
+                                // Create filename
+                                string filename = string.Format(_filenameFormat, ticketId, DateTime.Now) + ".jpg";
+                                string targetSubfolder = isEntry ? _entrySubfolder : _exitSubfolder;
+                                imagePath = Path.Combine(_imageBasePath, targetSubfolder, filename);
+
+                                // Allocate buffer and get image data
+                                IntPtr buffer = Marshal.AllocHGlobal(bufferSize);
+                                try
+                                {
+                                    hr = _sampleGrabber.GetCurrentBuffer(ref bufferSize, buffer);
+                                    DsError.ThrowExceptionForHR(hr);
+
+                                    byte[] imageData = new byte[bufferSize];
+                                    Marshal.Copy(buffer, imageData, 0, bufferSize);
+
+                                    // Save image
+                                    await Task.Run(() =>
+                                    {
+                                        using var bitmap = new Bitmap(640, 480, PixelFormat.Format24bppRgb);
+                                        var bitmapData = bitmap.LockBits(
+                                            new Rectangle(0, 0, bitmap.Width, bitmap.Height),
+                                            ImageLockMode.WriteOnly,
+                                            PixelFormat.Format24bppRgb
+                                        );
+
+                                        try
+                                        {
+                                            Marshal.Copy(imageData, 0, bitmapData.Scan0, bufferSize);
+                                        }
+                                        finally
+                                        {
+                                            bitmap.UnlockBits(bitmapData);
+                                        }
+
+                                        bitmap.Save(imagePath, ImageFormat.Jpeg);
+                                    });
+
+                                    OnImageCaptured(new ImageCapturedEventArgs(ticketId, imagePath, isEntry));
+                                    return true;
+                                }
+                                finally
+                                {
+                                    Marshal.FreeHGlobal(buffer);
+                                }
                             }
-                            finally
+                            else
                             {
-                                bitmap.UnlockBits(bitmapData);
+                                // Handle IP camera capture
+                                throw new NotImplementedException("IP camera capture not implemented");
                             }
-
-                            // Save image
-                            Directory.CreateDirectory(Path.GetDirectoryName(imagePath));
-                            bitmap.Save(imagePath, ImageFormat.Jpeg);
-
-                            OnImageCaptured(new ImageCapturedEventArgs(ticketId, imagePath, isEntry));
-                            return imagePath;
                         }
-                        finally
+                        catch (Exception ex)
                         {
-                            DsUtils.FreeAMMediaType(mediaType);
+                            _logger.LogError(ex, "Error capturing image");
+                            return false;
                         }
-                    }
-                    finally
-                    {
-                        handle.Free();
-                    }
-                }
-                else if (_cameraType.Equals("IP", StringComparison.OrdinalIgnoreCase))
+                    },
+                    "CaptureImage",
+                    this);
+
+                if (!success || string.IsNullOrEmpty(imagePath))
                 {
-                    // For IP camera, implement HTTP snapshot capture
-                    // This is a placeholder for IP camera implementation
-                    string url = $"http://{_cameraIp}:{_cameraPort}/snapshot.jpg";
-                    
-                    // Create filename
-                    string filename = string.Format(_filenameFormat, ticketId, DateTime.Now) + ".jpg";
-                    string targetSubfolder = isEntry ? _entrySubfolder : _exitSubfolder;
-                    string imagePath = Path.Combine(_imageBasePath, targetSubfolder, filename);
-                    
-                    // Would typically use HttpClient to get image
-                    // For now, just log the operation
-                    Console.WriteLine($"Would capture IP camera image from {url} and save to {imagePath}");
-                    
-                    // Raise event with mock filepath
-                    OnImageCaptured(new ImageCapturedEventArgs(ticketId, imagePath, isEntry));
-                    
-                    return imagePath;
+                    throw new InvalidOperationException("Failed to capture image after retries");
                 }
-                
-                return string.Empty;
+
+                return imagePath;
             }
-            catch (Exception ex)
+            finally
             {
-                Console.WriteLine($"Error capturing image: {ex.Message}");
-                return string.Empty;
+                _captureLock.Release();
             }
         }
 
-        /// <summary>
-        /// Opens the entry gate
-        /// </summary>
-        public bool OpenEntryGate()
+        public async Task<bool> OpenEntryGate()
         {
-            return SendCommand("OPEN_ENTRY");
+            ThrowIfDisposed();
+            return await SendCommandAsync("OPEN_ENTRY");
         }
 
-        /// <summary>
-        /// Opens the exit gate
-        /// </summary>
-        public bool OpenExitGate()
+        public async Task<bool> OpenExitGate()
         {
-            return SendCommand("A");
+            ThrowIfDisposed();
+            return await SendCommandAsync("OPEN_EXIT");
         }
 
-        /// <summary>
-        /// Sends command to the gate controller
-        /// </summary>
-        private bool SendCommand(string command)
+        public async Task<string> CaptureImageAsync(string location)
         {
+            ThrowIfDisposed();
+            if (string.IsNullOrEmpty(location))
+                throw new ArgumentException("Value cannot be null or empty.", nameof(location));
+
+            bool isEntry = location.Equals("entry", StringComparison.OrdinalIgnoreCase);
+            return await CaptureImageAsync(Guid.NewGuid().ToString(), isEntry);
+        }
+
+        public async Task<bool> PrintTicketAsync(string ticketNumber, string entryTime)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrEmpty(ticketNumber))
+                throw new ArgumentException("Value cannot be null or empty.", nameof(ticketNumber));
+            if (string.IsNullOrEmpty(entryTime))
+                throw new ArgumentException("Value cannot be null or empty.", nameof(entryTime));
+
             try
             {
-                if (_serialPort == null || !_serialPort.IsOpen)
-                {
-                    InitializeSerialPort();
-                }
-
-                _serialPort.WriteLine(command);
-                return true;
+                var command = $"PRINT_TICKET|{ticketNumber}|{entryTime}";
+                return await SendCommandAsync(command);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error sending command to gate controller: {ex.Message}");
+                _logger.LogError(ex, "Error printing ticket {TicketNumber}", ticketNumber);
                 return false;
             }
         }
 
-        /// <summary>
-        /// Handles data received from serial port
-        /// </summary>
-        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        public async Task<bool> PrintReceiptAsync(string ticketNumber, string exitTime, decimal amount)
         {
+            ThrowIfDisposed();
+            if (string.IsNullOrEmpty(ticketNumber))
+                throw new ArgumentException("Value cannot be null or empty.", nameof(ticketNumber));
+            if (string.IsNullOrEmpty(exitTime))
+                throw new ArgumentException("Value cannot be null or empty.", nameof(exitTime));
+
             try
             {
-                if (_serialPort.IsOpen)
-                {
-                    string data = _serialPort.ReadLine().Trim();
-                    Console.WriteLine($"Received from serial: {data}");
-                    
-                    // Parse command from serial data
-                    if (data.StartsWith("IN:"))
-                    {
-                        string id = data.Substring(3);
-                        OnCommandReceived(new CommandReceivedEventArgs("IN", id));
-                    }
-                    else if (data.StartsWith("OUT:"))
-                    {
-                        string id = data.Substring(4);
-                        OnCommandReceived(new CommandReceivedEventArgs("OUT", id));
-                    }
-                    else if (data.StartsWith("STATUS:"))
-                    {
-                        string status = data.Substring(7);
-                        OnCommandReceived(new CommandReceivedEventArgs("STATUS", status));
-                    }
-                }
+                var command = $"PRINT_RECEIPT|{ticketNumber}|{exitTime}|{amount:F2}";
+                return await SendCommandAsync(command);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error processing serial data: {ex.Message}");
+                _logger.LogError(ex, "Error printing receipt {TicketNumber}", ticketNumber);
+                return false;
             }
         }
 
-        /// <summary>
-        /// Raises the ImageCaptured event
-        /// </summary>
+        public async Task<bool> SendCommandAsync(string command)
+        {
+            ThrowIfDisposed();
+            if (string.IsNullOrEmpty(command))
+                throw new ArgumentException("Value cannot be null or empty.", nameof(command));
+
+            await _serialLock.WaitAsync();
+            try
+            {
+                return await _redundancyService.ExecuteWithRetryAsync<HardwareManager>(
+                    async () =>
+                    {
+                        if (_serialPort == null || !_serialPort.IsOpen)
+                        {
+                            _logger.LogError("Serial port is not initialized or not open");
+                            return false;
+                        }
+
+                        await Task.Run(() => _serialPort.WriteLine(command));
+                        return true;
+                    },
+                    $"SendCommand_{command}",
+                    this);
+            }
+            finally
+            {
+                _serialLock.Release();
+            }
+        }
+
+        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            if (_disposedValue || _serialPort == null)
+                return;
+
+            try
+            {
+                string data = _serialPort.ReadLine().Trim();
+                if (string.IsNullOrEmpty(data))
+                    return;
+
+                string[] parts = data.Split(':');
+                if (parts.Length != 2)
+                    return;
+
+                OnCommandReceived(new CommandReceivedEventArgs(parts[0], parts[1]));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing serial port data");
+            }
+        }
+
         protected virtual void OnImageCaptured(ImageCapturedEventArgs e)
         {
             ImageCaptured?.Invoke(this, e);
         }
 
-        /// <summary>
-        /// Raises the CommandReceived event
-        /// </summary>
         protected virtual void OnCommandReceived(CommandReceivedEventArgs e)
         {
             CommandReceived?.Invoke(this, e);
         }
 
-        /// <summary>
-        /// Helper method to parse INI files
-        /// </summary>
-        private Dictionary<string, Dictionary<string, string>> ParseIniFile(string path)
-        {
-            var iniData = new Dictionary<string, Dictionary<string, string>>();
-            string currentSection = "";
-
-            foreach (string line in File.ReadAllLines(path))
-            {
-                string trimmedLine = line.Trim();
-                
-                // Skip comments and empty lines
-                if (string.IsNullOrWhiteSpace(trimmedLine) || trimmedLine.StartsWith("#") || trimmedLine.StartsWith(";"))
-                    continue;
-
-                // Section header
-                if (trimmedLine.StartsWith("[") && trimmedLine.EndsWith("]"))
-                {
-                    currentSection = trimmedLine.Substring(1, trimmedLine.Length - 2);
-                    if (!iniData.ContainsKey(currentSection))
-                    {
-                        iniData[currentSection] = new Dictionary<string, string>();
-                    }
-                }
-                // Key-value pair
-                else if (trimmedLine.Contains("="))
-                {
-                    string[] parts = trimmedLine.Split(new[] { '=' }, 2);
-                    if (parts.Length == 2 && !string.IsNullOrEmpty(currentSection))
-                    {
-                        iniData[currentSection][parts[0].Trim()] = parts[1].Trim();
-                    }
-                }
-            }
-
-            return iniData;
-        }
-
-        /// <summary>
-        /// Helper method to get value from INI data
-        /// </summary>
-        private string GetIniValue(Dictionary<string, Dictionary<string, string>> iniData, string section, string key, string defaultValue)
-        {
-            if (iniData.ContainsKey(section) && iniData[section].ContainsKey(key))
-            {
-                return iniData[section][key];
-            }
-            return defaultValue;
-        }
-
-        /// <summary>
-        /// Disposes hardware resources
-        /// </summary>
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        /// <summary>
-        /// Dispose pattern implementation
-        /// </summary>
         protected virtual void Dispose(bool disposing)
         {
-            if (!_disposed)
+            if (!_disposedValue)
             {
                 if (disposing)
                 {
-                    if (_mediaControl != null)
-                    {
-                        _mediaControl.Stop();
-                        Marshal.ReleaseComObject(_mediaControl);
-                        _mediaControl = null;
-                    }
-
-                    if (_sampleGrabber != null)
-                    {
-                        Marshal.ReleaseComObject(_sampleGrabber);
-                        _sampleGrabber = null;
-                    }
-
-                    if (_videoDevice != null)
-                    {
-                        Marshal.ReleaseComObject(_videoDevice);
-                        _videoDevice = null;
-                    }
-
-                    if (_graphBuilder != null)
-                    {
-                        Marshal.ReleaseComObject(_graphBuilder);
-                        _graphBuilder = null;
-                    }
-
-                    if (_serialPort != null)
-                    {
-                        if (_serialPort.IsOpen)
-                            _serialPort.Close();
-                        _serialPort.Dispose();
-                        _serialPort = null;
-                    }
+                    // Dispose managed resources
                 }
 
-                _disposed = true;
+                _disposedValue = true;
             }
         }
 
-        ~HardwareManager()
+        public void Dispose()
         {
-            Dispose(false);
+            Dispose(disposing: true);
+            GC.SuppressFinalize(this);
         }
     }
 
-    /// <summary>
-    /// Event arguments for image capture events
-    /// </summary>
     public class ImageCapturedEventArgs : EventArgs
     {
         public string TicketId { get; }
@@ -590,9 +645,6 @@ namespace ParkIRC.Hardware
         }
     }
 
-    /// <summary>
-    /// Event arguments for command received events
-    /// </summary>
     public class CommandReceivedEventArgs : EventArgs
     {
         public string Command { get; }

@@ -1,330 +1,185 @@
-# Pengaturan Printer dan Hardware
+# Panduan Setup Hardware Printer Thermal
 
 ## Daftar Isi
-1. [Persyaratan Hardware](#persyaratan-hardware)
-2. [Konfigurasi Printer](#konfigurasi-printer)
-3. [Konfigurasi Kamera](#konfigurasi-kamera)
-4. [Loop Detector dan Gate Controller](#loop-detector-dan-gate-controller)
-5. [Mikrokontroler](#mikrokontroler)
-6. [Deteksi Sinyal dan Troubleshooting](#deteksi-sinyal-dan-troubleshooting)
+1. [Pendahuluan](#pendahuluan)
+2. [Spesifikasi Hardware](#spesifikasi-hardware)
+3. [Koneksi Hardware](#koneksi-hardware)
+4. [Konfigurasi Printer](#konfigurasi-printer)
+5. [Testing dan Verifikasi](#testing-dan-verifikasi)
+6. [Troubleshooting](#troubleshooting)
+7. [Maintenance](#maintenance)
 
-## Persyaratan Hardware
+## Pendahuluan
 
-### Komputer Client (ParkingIN dan ParkingOut)
-- Prosesor: Intel Core i3 atau setara (minimal)
-- RAM: 4GB (minimal)
-- Storage: 128GB SSD (direkomendasikan)
-- OS: Windows 10 64-bit
-- Port: Minimal 2 port USB (untuk kamera dan printer), 2 port Serial/USB-to-Serial (untuk loop detector dan gate controller)
-- Jaringan: Ethernet 100Mbps atau Wi-Fi 802.11n
+Dokumen ini menjelaskan langkah-langkah setup hardware printer thermal yang digunakan dalam sistem parkir. Printer thermal digunakan untuk mencetak tiket masuk dan keluar, serta struk pembayaran.
 
-### Server Database
-- Prosesor: Intel Core i5 atau setara (minimal)
-- RAM: 8GB (minimal)
-- Storage: 256GB SSD dengan backup eksternal
-- OS: Windows Server 2016/2019 atau Windows 10 Pro
-- Network: Ethernet 1Gbps
+## Spesifikasi Hardware
 
-### Perangkat Tambahan
-- Webcam HD (resolusi minimal 720p)
-- Printer Thermal (58mm atau 80mm)
-- Loop detector (untuk deteksi kendaraan)
-- Gate controller (untuk kendali palang pintu)
-- Mikrokontroler Arduino/ESP32 (opsional, untuk pengembangan lebih lanjut)
-- UPS (Uninterruptible Power Supply)
+### Printer Thermal
+- Model: Compatible dengan ESC/POS command
+- Interface: Serial (RS232/TTL)
+- Paper width: 58mm atau 80mm
+- Print speed: Min. 60mm/detik
+- Resolution: 203 DPI
+- Power supply: DC 12V/2A
+
+### Arduino Controller
+- Model: Arduino Uno R3
+- Microcontroller: ATmega328P
+- Operating Voltage: 5V
+- Digital I/O Pins: 14
+- UART: Hardware serial support
+
+### Kabel dan Adaptor
+- Kabel serial/TTL
+- Power adaptor 12V/2A
+- Kabel USB untuk Arduino
+- Kabel jumper
+
+## Koneksi Hardware
+
+### Diagram Koneksi
+```
+Power Supply (12V) --> Printer Thermal
+Arduino Uno       --> USB to PC (power & programming)
+Arduino TX (1)    --> Printer RX
+Arduino RX (0)    --> Printer TX
+Arduino GND       --> Printer GND
+```
+
+### Langkah-langkah Koneksi
+1. Hubungkan power supply ke printer thermal
+2. Koneksikan Arduino ke PC menggunakan kabel USB
+3. Hubungkan pin TX Arduino ke RX printer
+4. Hubungkan pin RX Arduino ke TX printer
+5. Hubungkan GND Arduino ke GND printer
 
 ## Konfigurasi Printer
 
-### Printer yang Didukung
-Sistem Parkir Modern mendukung berbagai printer thermal dengan spesifikasi:
-- Printer Thermal 58mm: Epson TM-T20, HOIN HOP-E58, Zjiang ZJ-5890K
-- Printer Thermal 80mm: Epson TM-T82, HOIN HOP-E801, POS-5805DD
+### Setting DIP Switch
+1. Baud Rate: 9600 (default)
+   - SW-1: OFF
+   - SW-2: ON
+   - SW-3: OFF
 
-### Instalasi Driver
-1. Unduh driver printer dari situs resmi produsen
-2. Instal driver sesuai petunjuk instalasi
-3. Pastikan printer terpasang sebagai printer default
-4. Restart komputer setelah instalasi driver
+2. Print Density:
+   - SW-4: ON (High)
+   - SW-5: OFF
 
-### Konfigurasi Printer di Aplikasi
-1. Buka aplikasi ParkingIN atau ParkingOut
-2. Pilih menu **Pengaturan > Printer**
-3. Pilih printer yang akan digunakan dari dropdown list
-4. Sesuaikan ukuran kertas:
-   - 58mm: Lebar 58mm, Panjang sesuai kebutuhan (biasanya 210mm)
-   - 80mm: Lebar 80mm, Panjang sesuai kebutuhan (biasanya 210mm)
-5. Klik "Tes Print" untuk memastikan pengaturan sudah benar
-6. Simpan pengaturan
+3. Sensor Type:
+   - SW-6: OFF (Gap sensor)
 
-### Pengaturan Lanjutan Printer
-Untuk mengakses pengaturan lanjutan printer:
-1. Buka Control Panel > Devices and Printers
-2. Klik kanan pada printer yang digunakan > Printing Preferences
-3. Atur properti berikut:
-   - Kualitas cetakan: Normal
-   - Densitas: Medium
-   - Kecepatan cetak: Normal
-4. Klik OK untuk menyimpan pengaturan
+4. Character Set:
+   - SW-7: OFF
+   - SW-8: ON
 
-### Troubleshooting Printer
-| Masalah | Solusi |
-|---------|--------|
-| Printer tidak terdeteksi | - Periksa koneksi kabel<br>- Reinstall driver<br>- Restart aplikasi dan komputer |
-| Hasil cetakan tidak jelas | - Periksa pengaturan densitas<br>- Bersihkan print head<br>- Ganti kertas thermal dengan kualitas lebih baik |
-| Kertas macet | - Pastikan jalur kertas bersih<br>- Periksa pengaturan ukuran kertas<br>- Gunakan kertas yang direkomendasikan |
-| Printer offline | - Cek status power dan koneksi<br>- Restart printer<br>- Set printer sebagai default |
+### Printer Commands
 
-## Konfigurasi Kamera
-
-### Kamera yang Didukung
-Sistem mendukung sebagian besar webcam USB standar dengan driver UVC (USB Video Class):
-- Logitech C270, C310, C920
-- Microsoft LifeCam
-- Webcam built-in laptop
-
-### Instalasi Kamera
-1. Hubungkan kamera ke port USB komputer
-2. Tunggu hingga Windows menginstal driver secara otomatis
-3. Jika driver tidak terinstal otomatis, unduh dari situs produsen
-
-### Konfigurasi Kamera di Aplikasi
-1. Buka aplikasi ParkingIN atau ParkingOut
-2. Pilih menu **Pengaturan > Kamera**
-3. Pilih kamera dari dropdown list
-4. Atur resolusi (direkomendasikan 640x480 atau 1280x720)
-5. Atur framerate (direkomendasikan 15-30 fps)
-6. Atur parameter gambar (brightness, contrast, saturation)
-7. Klik "Test Camera" untuk melihat preview
-8. Simpan pengaturan
-
-### Penempatan Kamera
-Untuk hasil optimal dalam menangkap plat nomor:
-- Jarak: 1-2 meter dari kendaraan
-- Sudut: Sejajar atau sedikit miring (15-30 derajat) terhadap plat nomor
-- Tinggi: Sekitar 1-1.5 meter dari permukaan tanah
-- Pencahayaan: Pastikan area cukup terang, tambahkan lampu jika diperlukan
-
-### Troubleshooting Kamera
-| Masalah | Solusi |
-|---------|--------|
-| Kamera tidak terdeteksi | - Periksa koneksi USB<br>- Coba port USB lain<br>- Reinstall driver kamera |
-| Gambar gelap/blur | - Sesuaikan pengaturan brightness/contrast<br>- Pastikan pencahayaan cukup<br>- Periksa fokus kamera |
-| Kamera freeze | - Tutup aplikasi lain yang mungkin menggunakan kamera<br>- Restart aplikasi<br>- Periksa kualitas kabel USB |
-| Delay/lag video | - Kurangi resolusi atau framerate<br>- Pastikan CPU tidak overload<br>- Update driver kamera |
-
-## Loop Detector dan Gate Controller
-
-### Spesifikasi Loop Detector
-- Tegangan kerja: 220 VAC atau 12-24 VDC (tergantung model)
-- Output: Relay NO/NC
-- Sensitivitas: Adjustable
-- Frekuensi: 20-170 kHz
-- Loop wire: 1.5mm² dengan minimal 3 putaran
-
-### Konfigurasi Loop Detector
-1. Pasang loop wire di bawah permukaan jalan dengan kedalaman 3-5 cm
-2. Hubungkan ujung loop wire ke terminal loop detector
-3. Atur sensitivitas loop detector (mulai dari level rendah dan tingkatkan secara bertahap)
-4. Hubungkan output relay loop detector ke port serial komputer melalui konverter RS232-to-USB
-
-### Spesifikasi Gate Controller
-- Tegangan kerja: 220 VAC
-- Motor: 90W-180W
-- Waktu buka/tutup: 1-6 detik (adjustable)
-- Mode kontrol: Manual dan otomatis
-- Interface: Contact relay atau RS485
-
-### Konfigurasi Gate Controller
-1. Pasang gate controller sesuai petunjuk instalasi produsen
-2. Hubungkan terminal kontrol ke port serial komputer melalui konverter RS232-to-USB
-3. Atur waktu buka/tutup gate (direkomendasikan 3-4 detik)
-4. Atur mode operasi ke mode remote control
-
-### Konfigurasi Serial Port di Aplikasi
-1. Buka aplikasi ParkingIN atau ParkingOut
-2. Pilih menu **Pengaturan > Hardware**
-3. Untuk Loop Detector:
-   - Pilih COM Port yang terhubung ke loop detector
-   - Set Baud Rate: 9600
-   - Data Bits: 8
-   - Parity: None
-   - Stop Bits: 1
-4. Untuk Gate Controller:
-   - Pilih COM Port yang terhubung ke gate controller
-   - Set Baud Rate: 9600 (atau sesuai spesifikasi gate controller)
-   - Data Bits: 8
-   - Parity: None
-   - Stop Bits: 1
-5. Klik "Tes Koneksi" untuk memastikan komunikasi berjalan baik
-6. Simpan pengaturan
-
-### Wiring Diagram
-![Wiring Diagram](../Images/wiring_diagram.png)
-
-## Mikrokontroler
-
-### Mikrokontroler yang Didukung
-Sistem dapat diintegrasikan dengan mikrokontroler:
-- Arduino Uno/Mega
-- ESP32/ESP8266
-- Raspberry Pi Pico
-
-### Koneksi Mikrokontroler
-1. Hubungkan mikrokontroler ke komputer menggunakan kabel USB
-2. Install driver jika diperlukan
-3. Untuk Arduino/ESP32:
-   - Upload firmware `ParkingSystem.ino` ke mikrokontroler
-   - Firmware tersedia di folder `firmware/`
-4. Konfigurasi koneksi di aplikasi (sama seperti konfigurasi serial port)
-
-### Kode Firmware Dasar
-Contoh kode dasar untuk Arduino:
-```cpp
-#define LOOP_SENSOR_PIN 2
-#define GATE_OPEN_PIN 3
-#define GATE_CLOSE_PIN 4
-#define STATUS_LED_PIN 13
-
-void setup() {
-  Serial.begin(9600);
-  pinMode(LOOP_SENSOR_PIN, INPUT_PULLUP);
-  pinMode(GATE_OPEN_PIN, OUTPUT);
-  pinMode(GATE_CLOSE_PIN, OUTPUT);
-  pinMode(STATUS_LED_PIN, OUTPUT);
-  
-  digitalWrite(GATE_OPEN_PIN, LOW);
-  digitalWrite(GATE_CLOSE_PIN, LOW);
-  
-  Serial.println("PARKING_CONTROLLER_READY");
-}
-
-void loop() {
-  // Baca status sensor loop
-  bool vehicleDetected = !digitalRead(LOOP_SENSOR_PIN);
-  
-  // Kirim status ke komputer
-  if (vehicleDetected) {
-    Serial.println("VEHICLE_DETECTED");
-    digitalWrite(STATUS_LED_PIN, HIGH);
-  } else {
-    Serial.println("NO_VEHICLE");
-    digitalWrite(STATUS_LED_PIN, LOW);
-  }
-  
-  // Baca perintah dari komputer
-  if (Serial.available() > 0) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
-    
-    if (command == "OPEN_GATE") {
-      digitalWrite(GATE_OPEN_PIN, HIGH);
-      delay(500);
-      digitalWrite(GATE_OPEN_PIN, LOW);
-      Serial.println("GATE_STATUS: OPENING");
-      delay(3000);
-      Serial.println("GATE_STATUS: OPEN");
-    }
-    else if (command == "CLOSE_GATE") {
-      digitalWrite(GATE_CLOSE_PIN, HIGH);
-      delay(500);
-      digitalWrite(GATE_CLOSE_PIN, LOW);
-      Serial.println("GATE_STATUS: CLOSING");
-      delay(3000);
-      Serial.println("GATE_STATUS: CLOSED");
-    }
-  }
-  
-  delay(100); // Jeda 100ms antara pembacaan
-}
-```
-
-## Deteksi Sinyal dan Troubleshooting
-
-### Deteksi Sinyal dari Mikrokontroler
-Sistem secara otomatis mendeteksi sinyal yang dikirim oleh mikrokontroler. Berikut adalah cara kerjanya:
-
-1. **Protokol Komunikasi**:
-   - Komunikasi serial dengan format ASCII text
-   - Setiap pesan diakhiri dengan karakter newline (`\n`)
-   - Baud rate default: 9600bps
-
-2. **Format Pesan dari Mikrokontroler**:
-   - `VEHICLE_DETECTED`: Kendaraan terdeteksi oleh loop sensor
-   - `NO_VEHICLE`: Tidak ada kendaraan terdeteksi
-   - `GATE_STATUS: OPEN`: Gate terbuka
-   - `GATE_STATUS: CLOSED`: Gate tertutup
-   - `GATE_STATUS: OPENING`: Gate sedang membuka
-   - `GATE_STATUS: CLOSING`: Gate sedang menutup
-
-3. **Format Perintah ke Mikrokontroler**:
-   - `OPEN_GATE`: Perintah membuka gate
-   - `CLOSE_GATE`: Perintah menutup gate
-
-4. **Penanganan Koneksi Terputus**:
-   Aplikasi mengimplementasikan fitur watchdog yang akan mendeteksi jika mikrokontroler tidak mengirim data selama periode tertentu:
-   
-   ```csharp
-   private void InitializeSerialWatchdog()
-   {
-       serialWatchdogTimer = new System.Threading.Timer(SerialWatchdogCallback, null, WATCHDOG_TIMEOUT_MS, Timeout.Infinite);
-   }
-   
-   private void SerialWatchdogCallback(object state)
-   {
-       if (DateTime.Now - lastSerialDataTime > TimeSpan.FromMilliseconds(WATCHDOG_TIMEOUT_MS))
-       {
-           // Koneksi terputus
-           InvokeOnMainThread(() => {
-               UpdateUIStatus("Koneksi mikrokontroler terputus", Color.Red);
-               LogWarning("Koneksi serial terputus - tidak ada data selama " + WATCHDOG_TIMEOUT_MS + "ms");
-               
-               // Coba hubungkan kembali
-               CloseSerialConnection();
-               InitializeSerialPorts();
-           });
-       }
-       
-       // Reset timer
-       serialWatchdogTimer.Change(WATCHDOG_TIMEOUT_MS, Timeout.Infinite);
-   }
-   
-   private void ProcessSerialData(string data)
-   {
-       lastSerialDataTime = DateTime.Now; // Update timestamp ketika data diterima
-       // Proses data...
-   }
+1. **Initialization**
+   ```
+   ESC @ - Initialize printer
+   ESC ! 0 - Normal text
+   ESC ! 1 - Bold text
    ```
 
-5. **Indikator Status Koneksi**:
-   - Aplikasi menampilkan indikator berwarna di sudut kanan bawah:
-     - Hijau: Mikrokontroler terhubung dan berfungsi normal
-     - Kuning: Mencoba menyambungkan kembali
-     - Merah: Koneksi terputus
+2. **Text Formatting**
+   ```
+   ESC a 0 - Left align
+   ESC a 1 - Center align
+   ESC a 2 - Right align
+   ```
 
-### Troubleshooting Koneksi Mikrokontroler
+3. **Paper Control**
+   ```
+   LF - Line feed
+   ESC d n - Feed n lines
+   GS V 1 - Paper cut
+   ```
 
-| Masalah | Solusi |
-|---------|--------|
-| Koneksi terputus | - Periksa kabel USB<br>- Pastikan mikrokontroler mendapat daya yang cukup<br>- Restart mikrokontroler<br>- Coba port USB yang berbeda |
-| Data tidak diterima | - Periksa baud rate<br>- Pastikan format data sesuai<br>- Cek apakah ada perangkat lain yang menggunakan port serial tersebut |
-| Gate tidak merespon | - Periksa koneksi ke relay<br>- Periksa tegangan motor gate<br>- Verifikasi perintah diterima oleh mikrokontroler dengan monitor serial |
-| False detection | - Sesuaikan sensitivitas loop detector<br>- Periksa kualitas loop wire<br>- Jauhkan kabel loop dari sumber interferensi elektromagnetik |
+## Testing dan Verifikasi
 
-### Mengatasi Masalah Interferensi
-1. Gunakan kabel berpelindung (shielded cable) untuk koneksi loop detector
-2. Pasang ferrite core pada kabel USB dan serial
-3. Pisahkan jalur kabel power dan sinyal
-4. Grounding yang baik untuk semua perangkat
-5. Hindari memasang loop wire dekat dengan kabel listrik atau sumber interferensi lainnya
+### Self-Test
+1. Matikan printer
+2. Tekan dan tahan tombol FEED
+3. Nyalakan printer sambil tetap menahan tombol FEED
+4. Lepas tombol setelah printer mulai mencetak
 
-### Log dan Diagnostik
-Semua komunikasi dengan mikrokontroler dicatat dalam file log:
-- Lokasi: `logs/hardware_YYYYMMDD.log`
-- Format log: `[Timestamp] [Level] [Component] Message`
-- Contoh: `[2023-12-25 15:30:45] [INFO] [SerialPort] Received: VEHICLE_DETECTED`
+### Test Print via Arduino
+1. Upload program test ke Arduino
+2. Buka Serial Monitor
+3. Kirim perintah test:
+   ```
+   TEST_PRINT
+   ALIGN_CENTER
+   PRINT_BOLD
+   CUT_PAPER
+   ```
 
-Untuk melihat log secara realtime:
-1. Buka aplikasi ParkingIN atau ParkingOut
-2. Pilih menu **Tools > Serial Monitor**
-3. Pilih port yang ingin dimonitor
-4. Klik "Start Monitoring" 
+### Verifikasi Hasil
+- Teks harus terbaca jelas
+- Alignment sesuai perintah
+- Paper cutting berfungsi
+- Tidak ada noise atau artefak
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Printer Tidak Merespon**
+   - Periksa power supply
+   - Verifikasi koneksi serial
+   - Cek setting DIP switch
+   - Test self-test print
+
+2. **Kualitas Print Buruk**
+   - Bersihkan print head
+   - Sesuaikan print density
+   - Ganti kertas thermal
+   - Cek suhu operasional
+
+3. **Paper Jam**
+   - Buka cover printer
+   - Keluarkan kertas tersangkut
+   - Periksa roller
+   - Bersihkan sensor kertas
+
+4. **Komunikasi Error**
+   - Verifikasi baudrate
+   - Cek koneksi TX/RX
+   - Periksa level tegangan
+   - Reset Arduino dan printer
+
+### Error Codes
+| Code | Description | Solution |
+|------|-------------|----------|
+| E1 | Paper out | Load new paper roll |
+| E2 | Cover open | Close printer cover |
+| E3 | High temp | Let printer cool down |
+| E4 | Cutter error | Reset printer |
+| E5 | Print head error | Contact service |
+
+## Maintenance
+
+### Daily Tasks
+- Periksa stok kertas
+- Bersihkan bagian luar printer
+- Verifikasi kualitas print
+
+### Weekly Tasks
+- Bersihkan print head
+- Periksa roller
+- Test full functionality
+
+### Monthly Tasks
+- Backup konfigurasi
+- Update firmware jika ada
+- Deep cleaning
+- Periksa semua koneksi
+
+### Supplies
+- Kertas thermal 58mm/80mm
+- Cleaning kit
+- Spare parts (recommended):
+  - Print head
+  - Paper roller
+  - Power supply 

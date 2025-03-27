@@ -6,7 +6,7 @@ using System.Collections.Generic;
 namespace ParkIRC.Models
 {
     [Table("ParkingRateConfigurations")]
-    public class ParkingRateConfiguration
+    public class ParkingRateConfiguration : ParkingRate
     {
         [Key]
         public int Id { get; set; }
@@ -132,5 +132,13 @@ namespace ParkIRC.Models
 
             return results;
         }
+
+        public string ConfigurationName { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public bool IsDefault { get; set; }
+        public DateTime ValidFrom { get; set; }
+        public DateTime? ValidTo { get; set; }
+        public string AppliedBy { get; set; } = string.Empty;
+        public DateTime AppliedAt { get; set; }
     }
 }

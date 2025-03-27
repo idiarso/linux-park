@@ -57,7 +57,7 @@ namespace ParkIRC.Services
                 await _context.ParkingTickets.AddAsync(ticket);
                 await _context.SaveChangesAsync();
 
-                await _printerService.PrintTicketAsync(ticket);
+                await _printerService.PrintTicketAsync(ticket.TicketNumber, ticket.EntryTime.ToString("dd/MM/yyyy HH:mm:ss"));
 
                 return ticket;
             }
