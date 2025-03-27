@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using ParkIRC.Models;
 using ParkIRC.Services;
+using ParkIRC.Services.Interfaces;
 using ParkIRC.Hardware;
 using ParkIRC.Hubs;
 using ParkIRC.Data;
@@ -78,7 +79,15 @@ namespace ParkIRC
             services.AddSingleton<IRealTimeMonitoringService, RealTimeMonitoringService>();
 
             // Register hardware services
-            services.AddSingleton<IHardwareManager, HardwareManager>();
+            services.AddSingleton<IHardwareManager>(sp =>
+            {
+                var logger = sp.GetRequiredService<ILogger<HardwareManager>>();
+                var config = sp.GetRequiredService<IConfiguration>();
+                var redundancyService = sp.GetRequiredService<IHardwareRedundancyService>();
+                
+                HardwareManager.Initialize(logger, config, redundancyService);
+                return (IHardwareManager)HardwareManager.Instance;
+            });
 
             // Add MVC
             services.AddControllersWithViews();
@@ -131,6 +140,8 @@ namespace ParkIRC
                 options.AddPolicy("RequireAdminRole", policy => policy.RequireRole("Administrator"));
                 options.AddPolicy("RequireOperatorRole", policy => policy.RequireRole("Operator"));
             });
+
+            services.AddScoped<VehicleIntegrationService>();
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)

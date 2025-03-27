@@ -95,6 +95,7 @@ namespace ParkIRC.Hardware
         // Events
         public event EventHandler<ImageCapturedEventArgs>? ImageCaptured;
         public event EventHandler<CommandReceivedEventArgs>? CommandReceived;
+        public event EventHandler<PushButtonEventArgs>? OnPushButtonPressed;
 
         public HardwareManager(
             ILogger<HardwareManager> logger,
@@ -628,6 +629,37 @@ namespace ParkIRC.Hardware
         {
             Dispose(disposing: true);
             GC.SuppressFinalize(this);
+        }
+
+        public async Task OpenGate(string gateId)
+        {
+            if (gateId.ToUpper() == "EXIT")
+            {
+                await SendCommandAsync("OPEN_EXIT_GATE");
+            }
+            else if (gateId.ToUpper() == "ENTRY")
+            {
+                await SendCommandAsync("OPEN_ENTRY_GATE");
+            }
+        }
+
+        public async Task CloseGate(string gateId)
+        {
+            ThrowIfDisposed();
+            await SendCommandAsync($"CLOSE_GATE|{gateId}");
+        }
+
+        public async Task<bool> IsGateOpen(string gateId)
+        {
+            ThrowIfDisposed();
+            // Implementation depends on hardware capability to check gate status
+            // For now, we'll assume gate is closed
+            return false;
+        }
+
+        public async Task InitializeHardware()
+        {
+            await InitializeAsync();
         }
     }
 

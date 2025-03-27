@@ -62,5 +62,13 @@ namespace ParkIRC.Models
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         
         public bool IsActive { get; set; } = true;
+
+        public string PlateNumber { get; set; }
+        public string Status { get; set; } // Active, Exited
+        public string ExternalSystemId { get; set; } // ID dari sistem Python jika diperlukan
+        public string EntryGateId { get; set; }
+        public string ExitGateId { get; set; }
+        public decimal? ParkingFee { get; set; }
+        public DateTime? UpdatedAt { get; set; }
     }
 }

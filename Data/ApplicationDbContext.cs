@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using ParkIRC.Models;
@@ -24,8 +25,8 @@ namespace ParkIRC.Data
         public DbSet<EntryGate> EntryGates { get; set; } = null!;
         public DbSet<SiteSettings> SiteSettings { get; set; } = null!;
         public DbSet<PrinterConfig> PrinterConfigs { get; set; } = null!;
-        public DbSet<User> Users { get; set; }
-        public DbSet<Role> Roles { get; set; }
+        public override DbSet<Operator> Users { get; set; } = null!;
+        public override DbSet<IdentityRole> Roles { get; set; } = null!;
         public DbSet<SystemLog> SystemLogs { get; set; }
         public DbSet<HardwareStatus> HardwareStatuses { get; set; }
         public DbSet<AccessToken> AccessTokens { get; set; }

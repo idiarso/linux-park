@@ -22,19 +22,22 @@ namespace ParkIRC.Hubs
         private readonly ConnectionStatusService _connectionStatusService;
         private static readonly Dictionary<string, string> _userConnections = new Dictionary<string, string>();
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly IHardwareManager _hardwareManager;
 
         public ParkingHub(
             ApplicationDbContext context,
             ILogger<ParkingHub> logger,
             IOfflineDataService offlineDataService,
             ConnectionStatusService connectionStatusService,
-            IServiceScopeFactory scopeFactory)
+            IServiceScopeFactory scopeFactory,
+            IHardwareManager hardwareManager)
         {
             _context = context;
             _logger = logger;
             _offlineDataService = offlineDataService;
             _connectionStatusService = connectionStatusService;
             _scopeFactory = scopeFactory;
+            _hardwareManager = hardwareManager;
         }
 
         public override async Task OnConnectedAsync()
@@ -257,9 +260,10 @@ namespace ParkIRC.Hubs
             }
         }
 
-        public async Task OpenExitGate(string spaceNumber)
+        public async Task OpenGate(string gateId, string spaceNumber)
         {
-            await Clients.All.SendAsync("OpenExitGate", spaceNumber);
+            await _hardwareManager.OpenGate(gateId);
+            await Clients.All.SendAsync("OpenGate", gateId, spaceNumber);
         }
 
         /// <summary>

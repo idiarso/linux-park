@@ -1,7 +1,6 @@
 using System;
-using System.IO.Ports;
-using System.Text;
-using System.Threading;
+using System.Drawing;
+using System.Drawing.Printing;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
@@ -9,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using ParkIRC.Data;
 using ParkIRC.Models;
+using System.IO.Ports;
+using System.Text;
 
 namespace ParkIRC.Services
 {
@@ -20,6 +21,7 @@ namespace ParkIRC.Services
         private readonly SerialPort _serialPort;
         private readonly SemaphoreSlim _printLock = new(1, 1);
         private bool _disposed;
+        private readonly string _printerName;
 
         private const int BAUD_RATE = 9600;
         private const string DEFAULT_PORT = "COM3";
@@ -45,6 +47,9 @@ namespace ParkIRC.Services
                 ReadTimeout = PRINT_TIMEOUT_MS,
                 WriteTimeout = PRINT_TIMEOUT_MS
             };
+
+            _printerName = string.IsNullOrEmpty(_configuration["PrinterSettings:PrinterName"]) ?
+                PrinterSettings.InstalledPrinters[0] : _configuration["PrinterSettings:PrinterName"];
         }
 
         public async Task InitializeAsync()
@@ -390,6 +395,123 @@ namespace ParkIRC.Services
                 
                 _serialPort.Dispose();
                 _printLock.Dispose();
+            }
+        }
+
+        public async Task<bool> PrintTicketWithBarcode(string ticketNumber, DateTime entryTime, string barcodeImagePath)
+        {
+            try
+            {
+                var printDocument = new PrintDocument();
+                printDocument.PrinterSettings.PrinterName = _printerName;
+
+                printDocument.PrintPage += (sender, e) =>
+                {
+                    var graphics = e.Graphics;
+                    var font = new Font("Arial", 10);
+                    var boldFont = new Font("Arial", 12, FontStyle.Bold);
+                    var y = 10;
+
+                    // Print header
+                    graphics.DrawString("PARKING TICKET", boldFont, Brushes.Black, 100, y);
+                    y += 30;
+
+                    // Print ticket details
+                    graphics.DrawString($"Ticket No : {ticketNumber}", font, Brushes.Black, 10, y);
+                    y += 20;
+                    graphics.DrawString($"Entry Time: {entryTime:dd/MM/yyyy HH:mm:ss}", font, Brushes.Black, 10, y);
+                    y += 30;
+
+                    // Print barcode
+                    if (System.IO.File.Exists(barcodeImagePath))
+                    {
+                        using (var barcode = Image.FromFile(barcodeImagePath))
+                        {
+                            graphics.DrawImage(barcode, 10, y, 280, 80);
+                        }
+                    }
+                    y += 100;
+
+                    // Print footer
+                    graphics.DrawString("Please keep this ticket safe", font, Brushes.Black, 70, y);
+                    y += 20;
+                    graphics.DrawString("Present this ticket when exiting", font, Brushes.Black, 60, y);
+                };
+
+                await Task.Run(() => printDocument.Print());
+                _logger.LogInformation($"Ticket printed successfully: {ticketNumber}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error printing ticket: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<bool> PrintReceipt(string ticketNumber, DateTime exitTime, decimal amount)
+        {
+            try
+            {
+                var printDocument = new PrintDocument();
+                printDocument.PrinterSettings.PrinterName = _printerName;
+
+                printDocument.PrintPage += (sender, e) =>
+                {
+                    var graphics = e.Graphics;
+                    var font = new Font("Arial", 10);
+                    var boldFont = new Font("Arial", 12, FontStyle.Bold);
+                    var y = 10;
+
+                    // Print header
+                    graphics.DrawString("PARKING RECEIPT", boldFont, Brushes.Black, 100, y);
+                    y += 30;
+
+                    // Print receipt details
+                    graphics.DrawString($"Ticket No : {ticketNumber}", font, Brushes.Black, 10, y);
+                    y += 20;
+                    graphics.DrawString($"Exit Time : {exitTime:dd/MM/yyyy HH:mm:ss}", font, Brushes.Black, 10, y);
+                    y += 20;
+                    graphics.DrawString($"Amount    : Rp {amount:N0}", font, Brushes.Black, 10, y);
+                    y += 30;
+
+                    // Print footer
+                    graphics.DrawString("Thank you for using our parking service", font, Brushes.Black, 40, y);
+                };
+
+                await Task.Run(() => printDocument.Print());
+                _logger.LogInformation($"Receipt printed successfully: {ticketNumber}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error printing receipt: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<bool> TestPrinter()
+        {
+            try
+            {
+                var printDocument = new PrintDocument();
+                printDocument.PrinterSettings.PrinterName = _printerName;
+
+                printDocument.PrintPage += (sender, e) =>
+                {
+                    var graphics = e.Graphics;
+                    var font = new Font("Arial", 12);
+                    graphics.DrawString("Printer Test - OK", font, Brushes.Black, 10, 10);
+                };
+
+                await Task.Run(() => printDocument.Print());
+                _logger.LogInformation("Printer test successful");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Printer test failed: {ex.Message}");
+                return false;
             }
         }
     }

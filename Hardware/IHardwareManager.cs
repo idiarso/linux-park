@@ -12,8 +12,13 @@ namespace ParkIRC.Hardware
         Task<bool> PrintTicketAsync(string ticketNumber, string entryTime);
         Task<bool> PrintReceiptAsync(string ticketNumber, string exitTime, decimal amount);
         Task<bool> SendCommandAsync(string command);
+        Task OpenGate(string gateId);
+        Task CloseGate(string gateId);
+        Task<bool> IsGateOpen(string gateId);
+        Task InitializeHardware();
         
         event EventHandler<ImageCapturedEventArgs> ImageCaptured;
         event EventHandler<CommandReceivedEventArgs> CommandReceived;
+        event EventHandler<PushButtonEventArgs> OnPushButtonPressed;
     }
 } 

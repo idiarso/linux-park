@@ -74,7 +74,7 @@ namespace ParkIRC.Controllers
                 await _context.SaveChangesAsync();
                 
                 // Buka gate
-                await _hubContext.Clients.All.SendAsync("OpenExitGate", transaction.ParkingSpace);
+                await _hubContext.Clients.All.SendAsync("OpenGate", "EXIT", transaction.ParkingSpace);
                 
                 // Catat log
                 _logger.LogInformation($"Exit gate opened for vehicle {transaction.Vehicle.VehicleNumber} with barcode {barcode}");

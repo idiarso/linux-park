@@ -121,11 +121,19 @@ try
         return new PrinterService(logger, config, scopeFactory);
     });
 
-    // Add HardwareManager as scoped service with configuration
-    builder.Services.AddScoped<HardwareManager>();
-    
+    // Add HardwareManager as singleton service with configuration
+    builder.Services.AddSingleton<IHardwareManager>(sp =>
+    {
+        var logger = sp.GetRequiredService<ILogger<ParkIRC.Hardware.HardwareManager>>();
+        var config = sp.GetRequiredService<IConfiguration>();
+        var redundancyService = sp.GetRequiredService<IHardwareRedundancyService>();
+        
+        ParkIRC.Hardware.HardwareManager.Initialize(logger, config, redundancyService);
+        return (IHardwareManager)ParkIRC.Hardware.HardwareManager.Instance;
+    });
+
     // Add HardwareRedundancyService
-    builder.Services.AddScoped<IHardwareRedundancyService, HardwareRedundancyService>();
+    builder.Services.AddSingleton<IHardwareRedundancyService, HardwareRedundancyService>();
     
     // Add background service untuk cek koneksi
     builder.Services.AddHostedService<ConnectionMonitorService>();

@@ -8,90 +8,89 @@ namespace ParkIRC.Models
     [Table("ParkingRateConfigurations")]
     public class ParkingRateConfiguration : ParkingRate
     {
-        [Key]
-        public int Id { get; set; }
+        public new int Id { get; set; }
 
         [Required]
         [StringLength(50)]
         [Display(Name = "Jenis Kendaraan")]
-        public string VehicleType { get; set; } = string.Empty;
+        public new string VehicleType { get; set; } = string.Empty;
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         [Range(0, double.MaxValue, ErrorMessage = "Tarif dasar tidak boleh negatif")]
         [Display(Name = "Tarif Dasar")]
-        public decimal BaseRate { get; set; }
+        public new decimal BaseRate { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         [Range(0, double.MaxValue, ErrorMessage = "Tarif per jam tidak boleh negatif")]
         [Display(Name = "Tarif per Jam")]
-        public decimal HourlyRate { get; set; }
+        public new decimal HourlyRate { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         [Range(0, double.MaxValue, ErrorMessage = "Tarif harian tidak boleh negatif")]
         [Display(Name = "Tarif Harian")]
-        public decimal DailyRate { get; set; }
+        public new decimal DailyRate { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         [Range(0, double.MaxValue, ErrorMessage = "Tarif mingguan tidak boleh negatif")]
         [Display(Name = "Tarif Mingguan")]
-        public decimal WeeklyRate { get; set; }
+        public new decimal WeeklyRate { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         [Range(0, double.MaxValue, ErrorMessage = "Tarif bulanan tidak boleh negatif")]
         [Display(Name = "Tarif Bulanan")]
-        public decimal MonthlyRate { get; set; }
+        public new decimal MonthlyRate { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         [Range(0, double.MaxValue, ErrorMessage = "Tarif denda tidak boleh negatif")]
         [Display(Name = "Tarif Denda")]
-        public decimal PenaltyRate { get; set; }
+        public new decimal PenaltyRate { get; set; }
 
         [Display(Name = "Status Aktif")]
-        public bool IsActive { get; set; } = true;
+        public new bool IsActive { get; set; } = true;
 
         [Required]
         [Display(Name = "Berlaku Sejak")]
-        public DateTime EffectiveFrom { get; set; }
+        public new DateTime EffectiveFrom { get; set; }
 
         [Display(Name = "Berlaku Sampai")]
         public DateTime? EffectiveTo { get; set; }
 
         [Required]
         [Display(Name = "Dibuat Oleh")]
-        public string CreatedBy { get; set; } = string.Empty;
+        public new string CreatedBy { get; set; } = string.Empty;
 
         [Required]
         [Display(Name = "Dibuat Pada")]
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public new DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         [Required]
         [Display(Name = "Diubah Oleh")]
-        public string LastModifiedBy { get; set; } = string.Empty;
+        public new string LastModifiedBy { get; set; } = string.Empty;
 
         [Display(Name = "Diubah Pada")]
-        public DateTime? LastModifiedAt { get; set; }
+        public new DateTime? LastModifiedAt { get; set; }
 
         // Additional properties referenced in controllers
         [Column(TypeName = "decimal(18,2)")]
-        public decimal MotorcycleRate { get; set; }
+        public new decimal MotorcycleRate { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
-        public decimal CarRate { get; set; }
+        public new decimal CarRate { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
-        public decimal AdditionalHourRate { get; set; }
+        public new decimal AdditionalHourRate { get; set; }
 
         [Column(TypeName = "decimal(18,2)")]
-        public decimal MaximumDailyRate { get; set; }
+        public new decimal MaximumDailyRate { get; set; }
 
         public DateTime LastUpdated { get; set; }
-        public string UpdatedBy { get; set; } = string.Empty;
+        public new string UpdatedBy { get; set; } = string.Empty;
 
         // Custom validation
         public IEnumerable<System.ComponentModel.DataAnnotations.ValidationResult> Validate(ValidationContext validationContext)
