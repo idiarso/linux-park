@@ -59,8 +59,8 @@ namespace ParkIRC.Services
 
             var transaction = new ParkingTransaction
             {
-                VehicleId = vehicle.Id.ToString(),
-                ParkingSpaceId = vehicle.ParkingSpaceId.HasValue ? vehicle.ParkingSpaceId.Value.ToString() : string.Empty,
+                VehicleId = vehicle.Id,
+                ParkingSpaceId = vehicle.ParkingSpaceId ?? 0,
                 TransactionNumber = GenerateTransactionNumber(),
                 EntryTime = vehicle.EntryTime,
                 ExitTime = exitTime,
@@ -133,4 +133,4 @@ namespace ParkIRC.Services
                    Guid.NewGuid().ToString("N").Substring(0, 6).ToUpper();
         }
     }
-} 
+}

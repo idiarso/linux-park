@@ -67,8 +67,8 @@ ParkIRC adalah sistem manajemen parkir modern yang menggabungkan otomatisasi di 
 
 1. Clone repository
 ```bash
-git clone https://github.com/yourusername/ParkIRC.git
-cd ParkIRC
+git clone https://github.com/idiarsopgl/parkir28Mar.git
+cd parkir28Mar
 ```
 
 2. Restore dependencies
@@ -76,69 +76,87 @@ cd ParkIRC
 dotnet restore
 ```
 
-3. Update database
+3. Update database (pastikan PostgreSQL sudah terpasang dan berjalan)
 ```bash
+# Jika PostgreSQL belum terpasang, install terlebih dahulu:
+# Windows: 
+# 1. Download PostgreSQL dari https://www.postgresql.org/download/windows/
+# 2. Ikuti wizard instalasi, catat username dan password
+# 3. Buat database baru untuk aplikasi
+
+# Linux:
+# sudo apt update
+# sudo apt install postgresql postgresql-contrib
+# sudo -u postgres createdb parkirc_db
+
+# Setelah PostgreSQL terpasang, jalankan:
 dotnet ef database update
 ```
+contoh : dotnet ef database update --project D:\AAA\Park28Maret-master\ParkIRC.csproj
+
 
 4. Setup konfigurasi
-- Copy `appsettings.example.json` ke `appsettings.json`
-- Sesuaikan koneksi database
-- Konfigurasi printer dan kamera
-- Setup email untuk notifikasi
+- Buka file `appsettings.json` dan sesuaikan:
+  - Koneksi database PostgreSQL
+  - Pengaturan kamera dan printer
+  - Konfigurasi email untuk notifikasi
+  - Pengaturan SignalR dan caching
 
 5. Jalankan aplikasi
 ```bash
 dotnet run
 ```
 
+6. Akses aplikasi
+```
+http://localhost:5000
+```
+
 ## Konfigurasi Hardware
 
 ### Pintu Masuk
 1. Setup kamera IP
-   - Konfigurasi di `CameraSettings`
+   - Konfigurasi di menu Settings > Devices > Cameras
    - Pastikan posisi optimal untuk ANPR
    
 2. Koneksi push button
-   - Ikuti panduan di `manualbook/mikrocontroller_avr_setup.md`
-   - Test koneksi menggunakan simulator
+   - Hubungkan mikrokontroler sesuai dengan diagram yang disediakan
+   - Test koneksi menggunakan simulator di menu Diagnostics
 
 3. Setup printer tiket
-   - Ikuti langkah di `setup-printer.sh`
-   - Test cetak tiket
+   - Konfigurasi di menu Settings > Devices > Printers
+   - Test cetak tiket dari menu Entry Gate
 
 ### Pintu Keluar
 1. Koneksi barcode scanner
    - Konfigurasi sebagai keyboard emulation
-   - Test pembacaan tiket
+   - Test pembacaan tiket di menu Exit Gate
 
 2. Setup printer struk
-   - Konfigurasi di `PrinterSettings`
-   - Test cetak struk
+   - Konfigurasi di menu Settings > Devices > Receipt Printers
+   - Test cetak struk dari menu Exit Gate
 
-## Dokumentasi
+## Pemecahan Masalah
 
-- [Panduan Administrator](manualbook/administrator_server_guide.md)
-- [Setup Mikrokontroler](manualbook/mikrocontroller_avr_setup.md)
-- [Database Real-time](manualbook/realtime_database.md)
-- [Alur Sistem](system_flow.md)
-- [Dokumentasi Teknis Lengkap](readmeplus.md)
-- [Manual Penggunaan](ParkIRC-Manual.md)
+- **Koneksi Database**: Pastikan PostgreSQL berjalan dan kredensial pada appsettings.json benar
+- **Kamera Tidak Berfungsi**: Periksa alamat IP, penempatan, dan pencahayaan
+- **Printer Error**: Periksa koneksi printer, kertas, dan driver
+- **Gate Tidak Berfungsi**: Verifikasi koneksi hardware dan konfigurasi pin
 
 ## Kontribusi
 
 1. Fork repository
-2. Buat branch fitur (`git checkout -b feature/AmazingFeature`)
-3. Commit perubahan (`git commit -m 'Add some AmazingFeature'`)
-4. Push ke branch (`git push origin feature/AmazingFeature`)
+2. Buat branch fitur (`git checkout -b feature/NamaFitur`)
+3. Commit perubahan (`git commit -m 'Menambahkan fitur baru'`)
+4. Push ke branch (`git push origin feature/NamaFitur`)
 5. Buat Pull Request
 
 ## Lisensi
 
-Distributed under the MIT License. See `LICENSE` for more information.
+Sistem ini didistribusikan di bawah Lisensi MIT. Lihat file `LICENSE` untuk informasi lebih lanjut.
 
 ## Kontak
 
-Your Name - [@yourtwitter](https://twitter.com/yourtwitter) - email@example.com
+ParkIRC Team - support@parkirc.com
 
-Project Link: [https://github.com/yourusername/ParkIRC](https://github.com/yourusername/ParkIRC)
+Project Link: [https://github.com/idiarsopgl/parkir28Mar](https://github.com/idiarsopgl/parkir28Mar)

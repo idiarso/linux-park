@@ -228,7 +228,7 @@ namespace ParkIRC.Controllers
 
                 // Create parking transaction
                 var transaction = await _context.ParkingTransactions
-                    .FirstOrDefaultAsync(t => t.VehicleId == vehicle.Id.ToString() && t.Status == "Active");
+                    .FirstOrDefaultAsync(t => t.VehicleId.ToString() == vehicle.Id.ToString() && t.Status == "Active");
                 if (transaction == null)
                 {
                     return BadRequest(new { error = "Parking transaction not found" });

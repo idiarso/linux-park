@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using System.Text;
 using System.Diagnostics;
+using ParkIRC.Models;
 
 namespace ParkIRC.Services
 {
@@ -142,6 +143,38 @@ namespace ParkIRC.Services
             catch
             {
                 return null;
+            }
+        }
+
+        public async Task<bool> PrintExitReceipt(ExitReceiptData data)
+        {
+            try
+            {
+                var content = new StringBuilder();
+                content.AppendLine("STRUK PARKIR - KELUAR");
+                content.AppendLine("===================");
+                content.AppendLine();
+                content.AppendLine($"No. Transaksi: {data.TransactionId}");
+                content.AppendLine($"No. Kendaraan: {data.VehicleNumber}");
+                content.AppendLine();
+                content.AppendLine($"Waktu Masuk : {data.EntryTime:dd/MM/yyyy HH:mm}");
+                content.AppendLine($"Waktu Keluar: {data.ExitTime:dd/MM/yyyy HH:mm}");
+                content.AppendLine($"Durasi      : {data.Duration}");
+                content.AppendLine();
+                content.AppendLine($"Total Biaya : Rp {data.Amount:N0}");
+                content.AppendLine();
+                content.AppendLine("===================");
+                content.AppendLine("Terima Kasih");
+                content.AppendLine();
+                content.AppendLine();
+                content.AppendLine();
+
+                return PrintTicket(content.ToString());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error printing exit receipt");
+                return false;
             }
         }
     }

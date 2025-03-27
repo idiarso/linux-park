@@ -58,6 +58,7 @@ namespace ParkIRC.Data
                 entity.Property(e => e.TransactionNumber).IsRequired();
                 entity.Property(e => e.HourlyRate).HasColumnType("decimal(18,2)");
                 entity.Property(e => e.TotalAmount).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.ParkingSpaceId).HasColumnType("int");
                 entity.HasOne(e => e.Vehicle)
                     .WithMany(v => v.Transactions)
                     .HasForeignKey(e => e.VehicleId)

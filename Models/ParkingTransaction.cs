@@ -16,10 +16,10 @@ namespace ParkIRC.Models
             OperatorId = string.Empty;
             EntryPoint = string.Empty;
             TicketNumber = string.Empty;
-            VehicleId = string.Empty;
+            VehicleId = 0;
             VehicleNumber = string.Empty;
             VehicleType = string.Empty;
-            ParkingSpaceId = string.Empty;
+            ParkingSpaceId = 0;
             ImagePath = string.Empty;
         }
 
@@ -32,9 +32,9 @@ namespace ParkIRC.Models
         public string TicketNumber { get; set; }
 
         [Required]
-        public string VehicleId { get; set; }
+        public int VehicleId { get; set; }
 
-        public string ParkingSpaceId { get; set; }
+        public int ParkingSpaceId { get; set; }
 
         [Required]
         public DateTime EntryTime { get; set; }

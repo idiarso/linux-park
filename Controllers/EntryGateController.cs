@@ -227,7 +227,7 @@ namespace ParkIRC.Controllers
                     EntryPoint = gateId.ToString(), 
                     VehicleNumber = request.VehicleNumber,
                     VehicleType = request.VehicleType,
-                    ParkingSpaceId = availableSpace.Id.ToString(), 
+                    ParkingSpaceId = availableSpace.Id,
                     IsManualEntry = true
                 };
 

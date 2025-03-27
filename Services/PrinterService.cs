@@ -27,6 +27,48 @@ namespace ParkIRC.Services
 
     public class PrinterService : IPrinterService
     {
+        private readonly ILogger<PrinterService> _logger;
+        private readonly IConfiguration _configuration;
+        private readonly IServiceScopeFactory _scopeFactory;
+        private readonly string _printerWebSocketUrl;
+        private readonly Dictionary<string, PrinterStatus> _printerStatuses;
+        private ClientWebSocket _webSocket;
+        private bool _isConnected;
+        private string _defaultPrinter;
+
+        // Constants for Windows API
+        private const uint GENERIC_WRITE = 0x40000000;
+        private const uint OPEN_EXISTING = 3;
+
+        public PrinterService(IServiceScopeFactory scopeFactory)
+        {
+            _scopeFactory = scopeFactory;
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var services = scope.ServiceProvider;
+                _logger = services.GetRequiredService<ILogger<PrinterService>>();
+                _configuration = services.GetRequiredService<IConfiguration>();
+                _printerWebSocketUrl = _configuration["PrinterSettings:WebSocketUrl"];
+                _printerStatuses = new Dictionary<string, PrinterStatus>();
+                _webSocket = new ClientWebSocket();
+                if (OperatingSystem.IsWindows())
+                {
+                    _defaultPrinter = GetDefaultPrinter();
+                }
+                else
+                {
+                    _defaultPrinter = string.Empty;
+                    _logger.LogWarning("Printing is only supported on Windows. Using mock implementation for Linux.");
+                }
+            }
+        }
+
+        private ApplicationDbContext CreateDbContext()
+        {
+            var scope = _scopeFactory.CreateScope();
+            return scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        }
+
         public async Task<bool> PrintTicketAsync(ParkingTicket ticket)
         {
             try
@@ -104,16 +146,6 @@ namespace ParkIRC.Services
                 return false;
             }
         }
-        private readonly ILogger<PrinterService> _logger;
-        private readonly string _defaultPrinter;
-        private const int GENERIC_WRITE = 0x40000000;
-        private const int OPEN_EXISTING = 3;
-        private readonly ApplicationDbContext _context;
-        private readonly IConfiguration _configuration;
-        private ClientWebSocket _webSocket;
-        private bool _isConnected;
-        private readonly string _printerWebSocketUrl;
-        private readonly Dictionary<string, PrinterStatus> _printerStatuses;
 
         private string FormatTicketData(TicketData ticket)
         {
@@ -124,28 +156,6 @@ namespace ParkIRC.Services
         static extern IntPtr CreateFile(string lpFileName, uint dwDesiredAccess,
             uint dwShareMode, IntPtr lpSecurityAttributes, uint dwCreationDisposition,
             uint dwFlagsAndAttributes, IntPtr hTemplateFile);
-
-        public PrinterService(
-            ILogger<PrinterService> logger,
-            ApplicationDbContext context,
-            IConfiguration configuration)
-        {
-            _logger = logger;
-            _context = context;
-            _configuration = configuration;
-            _printerWebSocketUrl = _configuration["PrinterSettings:WebSocketUrl"];
-            _printerStatuses = new Dictionary<string, PrinterStatus>();
-            _webSocket = new ClientWebSocket();
-            if (OperatingSystem.IsWindows())
-            {
-                _defaultPrinter = GetDefaultPrinter();
-            }
-            else
-            {
-                _defaultPrinter = string.Empty;
-                _logger.LogWarning("Printing is only supported on Windows. Using mock implementation for Linux.");
-            }
-        }
 
         public async Task InitializeAsync()
         {
@@ -226,7 +236,9 @@ namespace ParkIRC.Services
         {
             try
             {
-                var printers = await _context.PrinterConfigs
+                using var scope = _scopeFactory.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var printers = await context.PrinterConfigs
                     .Where(p => p.IsActive)
                     .ToListAsync();
 

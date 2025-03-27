@@ -351,7 +351,7 @@ namespace SimpleParkingAdmin.Hardware
         /// </summary>
         public bool OpenExitGate()
         {
-            return SendCommand("OPEN_EXIT");
+            return SendCommand("A");
         }
 
         /// <summary>

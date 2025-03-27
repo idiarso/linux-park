@@ -475,7 +475,7 @@ namespace ParkIRC.Controllers
 
                 // Find active transaction
                 var transaction = await _context.ParkingTransactions
-                    .Where(t => t.VehicleId == vehicle.Id.ToString() && t.ExitTime == default(DateTime))
+                    .Where(t => t.VehicleId == vehicle.Id && t.ExitTime == default(DateTime))
                     .OrderByDescending(t => t.EntryTime)
                     .FirstOrDefaultAsync();
 
@@ -540,6 +540,7 @@ namespace ParkIRC.Controllers
                 // Create response data
                 var response = new
                 {
+                    success = true,
                     message = "Kendaraan berhasil keluar",
                     vehicleNumber = vehicle.VehicleNumber,
                     entryTime = transaction.EntryTime,
@@ -548,6 +549,21 @@ namespace ParkIRC.Controllers
                     totalAmount = totalAmount,
                     spaceNumber = vehicle.ParkingSpace?.SpaceNumber
                 };
+
+                // Print exit receipt
+                await _printService.PrintExitReceipt(new ExitReceiptData
+                {
+                    VehicleNumber = vehicle.VehicleNumber,
+                    EntryTime = transaction.EntryTime,
+                    ExitTime = exitTime,
+                    Duration = $"{hours:0} jam",
+                    Amount = totalAmount,
+                    TransactionId = transaction.Id.ToString()
+                });
+
+                // Open exit gate
+                var hardwareManager = HardwareManager.Instance;
+                hardwareManager.OpenExitGate();
 
                 // Notify clients if SignalR hub is available
                 if (_hubContext != null)
@@ -804,8 +820,8 @@ namespace ParkIRC.Controllers
                 // Create transaction
                 var transaction = new ParkingTransaction
                 {
-                    VehicleId = vehicle.Id.ToString(),
-                    ParkingSpaceId = parkingSpace.Id.ToString(),
+                    VehicleId = vehicle.Id,
+                    ParkingSpaceId = parkingSpace.Id,
                     TransactionNumber = GenerateTransactionNumber(),
                     EntryTime = vehicle.EntryTime,
                     ExitTime = DateTime.Now,
@@ -1343,7 +1359,7 @@ namespace ParkIRC.Controllers
                 
                 // Load vehicles separately to avoid SQL join issues
                 var vehicles = await _context.Vehicles
-                    .Where(v => vehicleIds.Select(id => int.Parse(id)).Contains(v.Id))
+                    .Where(v => vehicleIds.Contains(v.Id))
                     .Select(v => new { 
                         v.Id, 
                         v.VehicleNumber,
@@ -1365,8 +1381,7 @@ namespace ParkIRC.Controllers
                 var vehicleDict = vehicles.ToDictionary(v => v.Id);
                 foreach (var transaction in allTransactions)
                 {
-                    if (int.TryParse(transaction.VehicleId, out int vehicleIdInt) && 
-                        vehicleDict.TryGetValue(vehicleIdInt, out var vehicleInfo))
+                    if (vehicleDict.TryGetValue(transaction.VehicleId, out var vehicleInfo))
                     {
                         transaction.Vehicle = new Vehicle
                         {

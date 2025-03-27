@@ -55,7 +55,6 @@ try
     builder.Services.AddScoped<IEmailService, EmailService>();
     builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
     builder.Services.AddScoped<IScannerService, ScannerService>();
-    builder.Services.AddScoped<PrintService>();
     builder.Services.AddScoped<ConnectionStatusService>();
     builder.Services.AddScoped<IOfflineDataService, OfflineDataService>();
     builder.Services.AddIdentity<Operator, IdentityRole>(options => {
@@ -98,18 +97,20 @@ try
     // Add response caching
     builder.Services.AddResponseCaching();
 
-    // Add printer service
-    builder.Services.AddSingleton<IPrinterService, PrinterService>();
+    // Add printer service with DbContext factory
+    builder.Services.AddSingleton<IPrinterService>(sp => {
+        var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
+        return new PrinterService(scopeFactory);
+    });
 
     // Add background service untuk cek koneksi
     builder.Services.AddHostedService<ConnectionMonitorService>();
 
-    // Add Connection Status Service
-    builder.Services.AddScoped<ConnectionStatusService>();
+    // Add Connection Status Service as hosted service
     builder.Services.AddHostedService<ConnectionStatusService>();
 
-    // Add Print Service
-    builder.Services.AddScoped<PrintService>();
+    // Add Print Service as singleton
+    builder.Services.AddSingleton<PrintService>();
 
     // Add Scheduled Backup Service
     builder.Services.AddHostedService<ScheduledBackupService>();
