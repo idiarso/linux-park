@@ -132,4 +132,29 @@
 @section Scripts {
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script src="~/js/vehicleExit.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft.signalr/6.0.6/signalr.min.js"></script>
+    <script>
+        // SignalR Connection
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/parkingHub")
+            .withAutomaticReconnect()
+            .build();
+
+        connection.start().catch(err => console.error(err));
+
+        // Notify when a vehicle exits
+        connection.on("NotifyVehicleExit", function(vehicleNumber) {
+            console.log(`Vehicle exited: ${vehicleNumber}`);
+            // Additional UI update logic here
+        });
+
+        // Example function to notify vehicle exit
+        async function notifyVehicleExit(vehicleNumber) {
+            try {
+                await connection.invoke("NotifyVehicleExit", vehicleNumber);
+            } catch (err) {
+                console.error(err);
+            }
+        }
+    </script>
 }

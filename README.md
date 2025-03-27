@@ -92,8 +92,6 @@ dotnet restore
 # Setelah PostgreSQL terpasang, jalankan:
 dotnet ef database update
 ```
-contoh : dotnet ef database update --project D:\AAA\Park28Maret-master\ParkIRC.csproj
-
 
 4. Setup konfigurasi
 - Buka file `appsettings.json` dan sesuaikan:
@@ -109,7 +107,7 @@ dotnet run
 
 6. Akses aplikasi
 ```
-http://localhost:5000
+http://localhost:5126
 ```
 
 ## Konfigurasi Hardware

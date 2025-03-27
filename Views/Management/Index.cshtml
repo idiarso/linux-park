@@ -57,4 +57,33 @@
             </div>
         </div>
     </div>
-</div> 
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft.signalr/6.0.6/signalr.min.js"></script>
+
+@section Scripts {
+    <script>
+        // SignalR Connection
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/parkingHub")
+            .withAutomaticReconnect()
+            .build();
+
+        connection.start().catch(err => console.error(err));
+
+        // Notify when a management action occurs
+        connection.on("NotifyManagementAction", function(actionDetails) {
+            console.log(`Management action performed: ${actionDetails}`);
+            // Additional UI update logic here
+        });
+
+        // Example function to notify management action
+        async function notifyManagementAction(actionDetails) {
+            try {
+                await connection.invoke("NotifyManagementAction", actionDetails);
+            } catch (err) {
+                console.error(err);
+            }
+        }
+    </script>
+}

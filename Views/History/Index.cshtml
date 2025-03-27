@@ -128,6 +128,7 @@
 </div>
 
 @section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft.signalr/6.0.6/signalr.min.js"></script>
     <script>
         $(document).ready(function() {
             $('#historyTable').DataTable({
@@ -137,5 +138,28 @@
                 }
             });
         });
+
+        // SignalR Connection
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/parkingHub")
+            .withAutomaticReconnect()
+            .build();
+
+        connection.start().catch(err => console.error(err));
+
+        // Notify when history data is updated
+        connection.on("NotifyHistoryUpdate", function(historyData) {
+            console.log(`History data updated: ${JSON.stringify(historyData)}`);
+            // Additional UI update logic here
+        });
+
+        // Example function to notify history update
+        async function notifyHistoryUpdate(historyData) {
+            try {
+                await connection.invoke("NotifyHistoryUpdate", historyData);
+            } catch (err) {
+                console.error(err);
+            }
+        }
     </script>
-} 
+}
