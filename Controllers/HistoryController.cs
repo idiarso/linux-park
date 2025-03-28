@@ -40,35 +40,31 @@ namespace ParkIRC.Controllers
 
             var totalCount = await transactions.CountAsync();
 
-            var data = await transactions
+            var parkingActivities = await transactions
                 .OrderByDescending(t => t.EntryTime)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(t => new 
+                .Select(t => new ParkingActivityViewModel
                 {
-                    TransactionNumber = t.TransactionNumber,
                     VehicleNumber = t.Vehicle == null ? "Unknown" : t.Vehicle.VehicleNumber,
-                    VehicleType = t.Vehicle == null ? "Unknown" : t.Vehicle.VehicleType,
                     EntryTime = t.EntryTime,
                     ExitTime = t.ExitTime,
                     Duration = t.ExitTime.HasValue ? 
                         $"{(int)(t.ExitTime.Value - t.EntryTime).TotalHours}h {(t.ExitTime.Value - t.EntryTime).Minutes}m" : 
                         "In Progress",
                     Amount = t.TotalAmount,
-                    PaymentStatus = t.PaymentStatus,
-                    PaymentMethod = t.PaymentMethod
+                    Status = t.PaymentStatus
                 })
                 .ToListAsync();
 
-            var viewModel = new HistoryViewModel
-            {
-                Transactions = data,
-                CurrentPage = page,
-                PageSize = pageSize,
-                TotalCount = totalCount
-            };
+            // Store filter data in ViewData for maintaining state
+            ViewData["CurrentFilter"] = "";
+            ViewData["StartDate"] = startDate;
+            ViewData["EndDate"] = endDate;
+            ViewData["CurrentPage"] = page;
+            ViewData["TotalPages"] = (int)Math.Ceiling(totalCount / (double)pageSize);
 
-            return View(viewModel);
+            return View(parkingActivities);
         }
 
         public async Task<IActionResult> Details(string? id)
