@@ -10,6 +10,11 @@ using ParkIRC.Data;
 using ParkIRC.Models;
 using System.IO.Ports;
 using System.Text;
+using System.IO;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace ParkIRC.Services
 {
@@ -22,9 +27,10 @@ namespace ParkIRC.Services
         private readonly SemaphoreSlim _printLock = new(1, 1);
         private bool _disposed;
         private readonly string _printerName;
+        private readonly string _printerPort;
 
         private const int BAUD_RATE = 9600;
-        private const string DEFAULT_PORT = "COM3";
+        private const string DEFAULT_PORT = "/dev/ttyUSB0";
         private const int PRINT_TIMEOUT_MS = 5000;
 
         public PrinterService(
@@ -36,13 +42,13 @@ namespace ParkIRC.Services
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
 
-            var port = _configuration["PrinterSettings:ComPort"] ?? DEFAULT_PORT;
-            if (string.IsNullOrEmpty(port))
+            _printerPort = _configuration["PrinterSettings:ComPort"] ?? DEFAULT_PORT;
+            if (string.IsNullOrEmpty(_printerPort))
             {
-                throw new ArgumentException("Printer port cannot be null or empty", nameof(port));
+                throw new ArgumentException("Printer port cannot be null or empty", nameof(_printerPort));
             }
 
-            _serialPort = new SerialPort(port, BAUD_RATE)
+            _serialPort = new SerialPort(_printerPort, BAUD_RATE)
             {
                 ReadTimeout = PRINT_TIMEOUT_MS,
                 WriteTimeout = PRINT_TIMEOUT_MS
@@ -283,7 +289,7 @@ namespace ParkIRC.Services
         public string GetPrinterPort()
         {
             ThrowIfDisposed();
-            return _serialPort.PortName;
+            return _printerPort;
         }
 
         public async Task<IEnumerable<(string id, string status)>> GetAllPrinterStatus()
@@ -400,118 +406,132 @@ namespace ParkIRC.Services
 
         public async Task<bool> PrintTicketWithBarcode(string ticketNumber, DateTime entryTime, string barcodeImagePath)
         {
+            ThrowIfDisposed();
+            await _printLock.WaitAsync();
             try
             {
-                var printDocument = new PrintDocument();
-                printDocument.PrinterSettings.PrinterName = _printerName;
+                // Initialize printer
+                await InitializePrinter();
 
-                printDocument.PrintPage += (sender, e) =>
+                // Format ticket data
+                var ticketData = new StringBuilder();
+                ticketData.AppendLine("\x1B@");  // Initialize printer
+                ticketData.AppendLine("\x1B!1"); // Emphasized mode
+                ticketData.AppendLine("TIKET PARKIR");
+                ticketData.AppendLine("================");
+                ticketData.AppendLine("\x1B!0"); // Normal mode
+                ticketData.AppendLine($"No: {ticketNumber}");
+                ticketData.AppendLine($"Tanggal: {entryTime:dd/MM/yyyy}");
+                ticketData.AppendLine($"Jam: {entryTime:HH:mm:ss}");
+
+                // Add barcode if available
+                if (File.Exists(barcodeImagePath))
                 {
-                    var graphics = e.Graphics;
-                    var font = new Font("Arial", 10);
-                    var boldFont = new Font("Arial", 12, FontStyle.Bold);
-                    var y = 10;
+                    using var image = SixLabors.ImageSharp.Image.Load<Rgba32>(barcodeImagePath);
+                    image.Mutate(x => x.Resize(384, 0)); // Resize to thermal printer width
+                    using var ms = new MemoryStream();
+                    image.Save(ms, new PngEncoder());
+                    var imageBytes = ms.ToArray();
+                    
+                    // Convert image to printer format
+                    var printerImageData = ConvertImageToPrinterFormat(imageBytes);
+                    ticketData.Append(printerImageData);
+                }
 
-                    // Print header
-                    graphics.DrawString("PARKING TICKET", boldFont, Brushes.Black, 100, y);
-                    y += 30;
+                ticketData.AppendLine("\n\n\n"); // Feed lines
+                ticketData.AppendLine("\x1DV1"); // Cut paper
 
-                    // Print ticket details
-                    graphics.DrawString($"Ticket No : {ticketNumber}", font, Brushes.Black, 10, y);
-                    y += 20;
-                    graphics.DrawString($"Entry Time: {entryTime:dd/MM/yyyy HH:mm:ss}", font, Brushes.Black, 10, y);
-                    y += 30;
+                // Send data to printer
+                if (!_serialPort.IsOpen)
+                {
+                    _serialPort.Open();
+                }
+                _serialPort.Write(ticketData.ToString());
 
-                    // Print barcode
-                    if (System.IO.File.Exists(barcodeImagePath))
-                    {
-                        using (var barcode = Image.FromFile(barcodeImagePath))
-                        {
-                            graphics.DrawImage(barcode, 10, y, 280, 80);
-                        }
-                    }
-                    y += 100;
-
-                    // Print footer
-                    graphics.DrawString("Please keep this ticket safe", font, Brushes.Black, 70, y);
-                    y += 20;
-                    graphics.DrawString("Present this ticket when exiting", font, Brushes.Black, 60, y);
-                };
-
-                await Task.Run(() => printDocument.Print());
-                _logger.LogInformation($"Ticket printed successfully: {ticketNumber}");
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error printing ticket: {ex.Message}");
+                _logger.LogError(ex, "Error printing ticket {TicketNumber}", ticketNumber);
                 return false;
+            }
+            finally
+            {
+                if (_serialPort.IsOpen)
+                {
+                    _serialPort.Close();
+                }
+                _printLock.Release();
             }
         }
 
-        public async Task<bool> PrintReceipt(string ticketNumber, DateTime exitTime, decimal amount)
+        private async Task InitializePrinter()
         {
             try
             {
-                var printDocument = new PrintDocument();
-                printDocument.PrinterSettings.PrinterName = _printerName;
-
-                printDocument.PrintPage += (sender, e) =>
+                if (!_serialPort.IsOpen)
                 {
-                    var graphics = e.Graphics;
-                    var font = new Font("Arial", 10);
-                    var boldFont = new Font("Arial", 12, FontStyle.Bold);
-                    var y = 10;
+                    _serialPort.Open();
+                }
 
-                    // Print header
-                    graphics.DrawString("PARKING RECEIPT", boldFont, Brushes.Black, 100, y);
-                    y += 30;
-
-                    // Print receipt details
-                    graphics.DrawString($"Ticket No : {ticketNumber}", font, Brushes.Black, 10, y);
-                    y += 20;
-                    graphics.DrawString($"Exit Time : {exitTime:dd/MM/yyyy HH:mm:ss}", font, Brushes.Black, 10, y);
-                    y += 20;
-                    graphics.DrawString($"Amount    : Rp {amount:N0}", font, Brushes.Black, 10, y);
-                    y += 30;
-
-                    // Print footer
-                    graphics.DrawString("Thank you for using our parking service", font, Brushes.Black, 40, y);
-                };
-
-                await Task.Run(() => printDocument.Print());
-                _logger.LogInformation($"Receipt printed successfully: {ticketNumber}");
-                return true;
+                // Send initialization sequence
+                _serialPort.Write(new byte[] { 0x1B, 0x40 }, 0, 2); // ESC @
+                await Task.Delay(100);
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error printing receipt: {ex.Message}");
-                return false;
+                _logger.LogError(ex, "Error initializing printer");
+                throw;
             }
+        }
+
+        private string ConvertImageToPrinterFormat(byte[] imageData)
+        {
+            // This is a simplified example - you'll need to implement proper
+            // image conversion for your specific thermal printer model
+            var sb = new StringBuilder();
+            sb.Append("\x1B*"); // Enter bit image mode
+            // Add your printer-specific image conversion logic here
+            return sb.ToString();
         }
 
         public async Task<bool> TestPrinter()
         {
+            ThrowIfDisposed();
+            await _printLock.WaitAsync();
             try
             {
-                var printDocument = new PrintDocument();
-                printDocument.PrinterSettings.PrinterName = _printerName;
+                await InitializePrinter();
+                var testData = new StringBuilder();
+                testData.AppendLine("\x1B@");  // Initialize printer
+                testData.AppendLine("\x1B!1"); // Emphasized mode
+                testData.AppendLine("TEST PRINT");
+                testData.AppendLine("==========");
+                testData.AppendLine("\x1B!0"); // Normal mode
+                testData.AppendLine("Printer OK");
+                testData.AppendLine("\n\n\n"); // Feed lines
+                testData.AppendLine("\x1DV1"); // Cut paper
 
-                printDocument.PrintPage += (sender, e) =>
+                if (!_serialPort.IsOpen)
                 {
-                    var graphics = e.Graphics;
-                    var font = new Font("Arial", 12);
-                    graphics.DrawString("Printer Test - OK", font, Brushes.Black, 10, 10);
-                };
+                    _serialPort.Open();
+                }
+                _serialPort.Write(testData.ToString());
 
-                await Task.Run(() => printDocument.Print());
-                _logger.LogInformation("Printer test successful");
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Printer test failed: {ex.Message}");
+                _logger.LogError(ex, "Error testing printer");
                 return false;
+            }
+            finally
+            {
+                if (_serialPort.IsOpen)
+                {
+                    _serialPort.Close();
+                }
+                _printLock.Release();
             }
         }
     }

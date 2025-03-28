@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using QRCoder;
 using System.Drawing;
 using System.IO;
+using System.Drawing.Imaging;
 
 namespace ParkIRC.Services
 {
@@ -88,14 +89,15 @@ namespace ParkIRC.Services
         {
             try
             {
-                using var qrGenerator = new QRCodeGenerator();
-                var qrCodeData = qrGenerator.CreateQrCode(data, QRCodeGenerator.ECCLevel.Q);
-                using var qrCode = new QRCode(qrCodeData);
-                using var qrCodeImage = qrCode.GetGraphic(20);
-                using var ms = new MemoryStream();
-                qrCodeImage.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-                var imageBytes = ms.ToArray();
-                return Convert.ToBase64String(imageBytes);
+                using (QRCodeGenerator qrGenerator = new QRCodeGenerator())
+                {
+                    QRCodeData qrCodeData = qrGenerator.CreateQrCode(data, QRCodeGenerator.ECCLevel.Q);
+                    using (PngByteQRCode qrCode = new PngByteQRCode(qrCodeData))
+                    {
+                        byte[] qrCodeBytes = qrCode.GetGraphic(20);
+                        return Convert.ToBase64String(qrCodeBytes);
+                    }
+                }
             }
             catch (Exception ex)
             {

@@ -59,7 +59,7 @@ namespace ParkIRC.Infrastructure.Logging
 
     public static class FileLoggerExtensions
     {
-        public static ILoggingBuilder AddFile(this ILoggingBuilder builder, string filePath, Action<FileLoggerOptions> configure = null)
+        public static ILoggingBuilder AddFile(this ILoggingBuilder builder, string filePath, Action<FileLoggerOptions>? configure = null)
         {
             var options = new FileLoggerOptions
             {
@@ -77,7 +77,7 @@ namespace ParkIRC.Infrastructure.Logging
 
     public class FileLoggerOptions
     {
-        public string FilePath { get; set; }
+        public string FilePath { get; set; } = string.Empty;
         public long FileSizeLimitBytes { get; set; }
         public int RetainedFileCountLimit { get; set; }
         public bool Append { get; set; }
@@ -112,7 +112,7 @@ namespace ParkIRC.Infrastructure.Logging
             _options = options;
         }
 
-        public IDisposable BeginScope<TState>(TState state) => null;
+        public IDisposable? BeginScope<TState>(TState state) => null;
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
@@ -120,8 +120,8 @@ namespace ParkIRC.Infrastructure.Logging
             LogLevel logLevel,
             EventId eventId,
             TState state,
-            Exception exception,
-            Func<TState, Exception, string> formatter)
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
         {
             if (!IsEnabled(logLevel))
             {
@@ -165,8 +165,8 @@ namespace ParkIRC.Infrastructure.Logging
 
         private void RotateLogFiles(string currentLogPath)
         {
-            var directory = Path.GetDirectoryName(currentLogPath);
-            var fileNameWithoutExt = Path.GetFileNameWithoutExtension(currentLogPath);
+            var directory = Path.GetDirectoryName(currentLogPath) ?? ".";
+            var fileNameWithoutExt = Path.GetFileNameWithoutExtension(currentLogPath) ?? "log";
             var extension = Path.GetExtension(currentLogPath);
 
             // Shift existing log files

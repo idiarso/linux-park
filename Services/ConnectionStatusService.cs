@@ -14,9 +14,9 @@ using Microsoft.Extensions.Hosting;
 using Timer = System.Threading.Timer;
 using System.Security.AccessControl;
 using ParkIRC.Models;
-using DirectShowLib;
-using System.Collections.Generic;
-using System.Linq;
+using OpenCvSharp;
+using System.Drawing;
+using System.Drawing.Imaging;
 
 namespace ParkIRC.Services
 {
@@ -32,6 +32,7 @@ namespace ParkIRC.Services
         private bool _disposed;
         private readonly SemaphoreSlim _statusLock = new(1, 1);
         private readonly int _checkInterval;
+        private VideoCapture? _videoCapture;
 
         public ConnectionStatusService(
             ILogger<ConnectionStatusService> logger,
@@ -208,43 +209,33 @@ namespace ParkIRC.Services
         {
             try
             {
-                // Check camera using DirectShow
-                if (OperatingSystem.IsWindows())
+                // Check camera using OpenCvSharp
+                _videoCapture = new VideoCapture(0);
+                if (!_videoCapture.IsOpened())
                 {
-                    return await Task.Run(() =>
-                    {
-                        var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
-                        return devices.Length > 0;
-                    });
+                    _logger.LogError("Failed to open camera device");
+                    return false;
                 }
-                else
-                {
-                    // For Linux/macOS, check if video device exists
-                    return await Task.Run(() =>
-                    {
-                        var processInfo = new ProcessStartInfo
-                        {
-                            FileName = "ls",
-                            Arguments = "/dev/video*",
-                            RedirectStandardOutput = true,
-                            UseShellExecute = false,
-                            CreateNoWindow = true
-                        };
-                        
-                        using var process = Process.Start(processInfo);
-                        if (process == null)
-                            return false;
 
-                        string output = process.StandardOutput.ReadToEnd();
-                        process.WaitForExit();
-                        return !string.IsNullOrEmpty(output) && output.Contains("video");
-                    });
+                // Capture a frame to test
+                using var mat = new Mat();
+                if (!_videoCapture.Read(mat))
+                {
+                    _logger.LogError("Failed to capture frame from camera");
+                    return false;
                 }
+
+                _logger.LogInformation("Camera connection test successful");
+                return true;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error checking camera status");
                 return false;
+            }
+            finally
+            {
+                _videoCapture?.Dispose();
             }
         }
         
@@ -279,14 +270,39 @@ namespace ParkIRC.Services
                 status.DiskFree = FormatBytes(driveInfo.AvailableFreeSpace);
                 status.DiskUsagePercent = $"{((double)(driveInfo.TotalSize - driveInfo.AvailableFreeSpace) / driveInfo.TotalSize * 100):F1}%";
 
-                var performanceCounter = new PerformanceCounter("Memory", "Available MBytes", true);
-                var totalMemory = new Microsoft.VisualBasic.Devices.ComputerInfo().TotalPhysicalMemory;
-                var availableMemory = performanceCounter.NextValue() * 1024 * 1024;
-                var usedMemory = totalMemory - availableMemory;
+                // Use platform-agnostic way to get memory info
+                var memProcess = new ProcessStartInfo
+                {
+                    FileName = "wmic",
+                    Arguments = "OS get TotalVisibleMemorySize,FreePhysicalMemory /Value",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
 
-                status.MemoryTotal = FormatBytes(totalMemory);
-                status.MemoryUsed = FormatBytes(usedMemory);
-                status.MemoryFree = FormatBytes(availableMemory);
+                using var process = Process.Start(memProcess);
+                if (process != null)
+                {
+                    string output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+
+                    var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                    long totalMemory = 0;
+                    long freeMemory = 0;
+
+                    foreach (var line in lines)
+                    {
+                        if (line.StartsWith("TotalVisibleMemorySize"))
+                            totalMemory = long.Parse(line.Split('=')[1].Trim()) * 1024; // Convert from KB to bytes
+                        else if (line.StartsWith("FreePhysicalMemory"))
+                            freeMemory = long.Parse(line.Split('=')[1].Trim()) * 1024; // Convert from KB to bytes
+                    }
+
+                    var usedMemory = totalMemory - freeMemory;
+                    status.MemoryTotal = FormatBytes(totalMemory);
+                    status.MemoryUsed = FormatBytes(usedMemory);
+                    status.MemoryFree = FormatBytes(freeMemory);
+                }
             });
         }
 
@@ -394,6 +410,7 @@ namespace ParkIRC.Services
                 }
 
                 _statusLock.Dispose();
+                _videoCapture?.Dispose();
                 GC.SuppressFinalize(this);
             }
         }

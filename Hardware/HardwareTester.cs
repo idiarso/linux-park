@@ -2,25 +2,34 @@ using System;
 using System.IO;
 using System.IO.Ports;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.Linq;
-using System.Runtime.InteropServices;
-using DirectShowLib;
-using static DirectShowLib.DsGuid;
+using OpenCvSharp;
+using OpenCvSharp.Extensions;
+using Microsoft.Extensions.Logging;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace ParkIRC.Hardware
 {
     /// <summary>
     /// Utility to test hardware connections and functionality
     /// </summary>
-    public class HardwareTester
+    public class HardwareTester : IDisposable
     {
         private const string ConfigPath = "config";
         private const string TestImagePath = "test_images";
         private const string TestPrintContent = "TEST PRINT - SISTEM PARKIR\r\n===========================\r\nTEST BARCODE: TEST123\r\n===========================";
         
+        private readonly ILogger<HardwareTester> _logger;
+        private VideoCapture? _videoCapture;
+
+        public HardwareTester(ILogger<HardwareTester> logger)
+        {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+
         /// <summary>
         /// Entry point for hardware test utility
         /// </summary>
@@ -55,7 +64,7 @@ namespace ParkIRC.Hardware
                             await TestPrinterAsync();
                             break;
                         case "4":
-                            TestAllHardware();
+                            await TestAllHardware();
                             break;
                         case "5":
                             TestBarcodeScanner();
@@ -107,240 +116,15 @@ namespace ParkIRC.Hardware
             
             try
             {
-                // Load camera settings
-                var cameraConfig = LoadIniFile(Path.Combine(ConfigPath, "camera.ini"));
-                string cameraType = GetIniValue(cameraConfig, "Camera", "Type", "Webcam");
-                
-                Console.WriteLine($"Camera type: {cameraType}");
-                
-                if (cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
+                var hardwareTester = new HardwareTester(null);
+                if (await hardwareTester.TestCameraConnectionAsync())
                 {
-                    await TestWebcamAsync(cameraConfig);
-                }
-                else if (cameraType.Equals("IP", StringComparison.OrdinalIgnoreCase))
-                {
-                    await TestIpCameraAsync(cameraConfig);
-                }
-                else
-                {
-                    Console.WriteLine($"Unknown camera type: {cameraType}");
+                    Console.WriteLine("Camera test completed successfully!");
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Camera test failed: {ex.Message}");
-            }
-        }
-        
-        /// <summary>
-        /// Test local webcam
-        /// </summary>
-        private static async Task TestWebcamAsync(Dictionary<string, Dictionary<string, string>> config)
-        {
-            Console.WriteLine("Testing webcam connection...");
-            
-            try
-            {
-                // Get device index
-                int deviceIndex = int.Parse(GetIniValue(config, "Webcam", "Device_Index", "0"));
-                
-                // List available devices
-                var videoDevices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
-                
-                if (videoDevices.Length == 0)
-                {
-                    Console.WriteLine("No video devices found!");
-                    return;
-                }
-                
-                Console.WriteLine("Available video devices:");
-                for (int i = 0; i < videoDevices.Length; i++)
-                {
-                    Console.WriteLine($"{i}: {videoDevices[i].Name}");
-                }
-                
-                if (deviceIndex >= videoDevices.Length)
-                {
-                    Console.WriteLine($"Warning: Configured device index {deviceIndex} is out of range. Using index 0.");
-                    deviceIndex = 0;
-                }
-                
-                Console.WriteLine($"Using device: {videoDevices[deviceIndex].Name}");
-                
-                // Create filter graph
-                var graphBuilder = (IFilterGraph2)new FilterGraph();
-                var mediaControl = (IMediaControl)graphBuilder;
-
-                // Add video device filter
-                var hr = graphBuilder.AddSourceFilterForMoniker(
-                    videoDevices[deviceIndex].Mon, null, videoDevices[deviceIndex].Name, out var videoDevice);
-                DsError.ThrowExceptionForHR(hr);
-
-                // Create and add sample grabber
-                var sampleGrabber = (ISampleGrabber)new SampleGrabber();
-                var sampleGrabberFilter = (IBaseFilter)sampleGrabber;
-                hr = graphBuilder.AddFilter(sampleGrabberFilter, "Sample Grabber");
-                DsError.ThrowExceptionForHR(hr);
-
-                // Set media type
-                var mediaType = new AMMediaType
-                {
-                    majorType = MediaType.Video,
-                    subType = MediaSubType.RGB24,
-                    formatType = FormatType.VideoInfo
-                };
-                hr = sampleGrabber.SetMediaType(mediaType);
-                DsError.ThrowExceptionForHR(hr);
-
-                // Create null renderer
-                var nullRenderer = (IBaseFilter)new NullRenderer();
-                hr = graphBuilder.AddFilter(nullRenderer, "Null Renderer");
-                if (hr < 0)
-                    throw new Exception("Failed to add null renderer filter to graph");
-
-                // Connect filters
-                var pinOut = DsFindPin.ByDirection(videoDevice, PinDirection.Output, 0);
-                var pinIn = DsFindPin.ByDirection(sampleGrabberFilter, PinDirection.Input, 0);
-                hr = graphBuilder.Connect(pinOut, pinIn);
-                DsError.ThrowExceptionForHR(hr);
-
-                pinOut = DsFindPin.ByDirection(sampleGrabberFilter, PinDirection.Output, 0);
-                pinIn = DsFindPin.ByDirection(nullRenderer, PinDirection.Input, 0);
-                hr = graphBuilder.Connect(pinOut, pinIn);
-                DsError.ThrowExceptionForHR(hr);
-
-                // Set callback
-                hr = sampleGrabber.SetBufferSamples(true);
-                DsError.ThrowExceptionForHR(hr);
-                hr = sampleGrabber.SetOneShot(false);
-                DsError.ThrowExceptionForHR(hr);
-
-                // Start capturing
-                hr = mediaControl.Run();
-                DsError.ThrowExceptionForHR(hr);
-
-                Console.WriteLine("Capturing frames... Please wait.");
-
-                // Capture a few frames
-                for (int i = 0; i < 3; i++)
-                {
-                    // Get buffer size
-                    int bufferSize = 0;
-                    hr = sampleGrabber.GetCurrentBuffer(ref bufferSize, IntPtr.Zero);
-                    DsError.ThrowExceptionForHR(hr);
-
-                    // Allocate buffer
-                    var buffer = new byte[bufferSize];
-                    var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-                    var connectedMediaType = new AMMediaType();
-                    try
-                    {
-                        // Get frame data
-                        hr = sampleGrabber.GetCurrentBuffer(ref bufferSize, handle.AddrOfPinnedObject());
-                        DsError.ThrowExceptionForHR(hr);
-
-                        // Get media type
-                        hr = sampleGrabber.GetConnectedMediaType(connectedMediaType);
-                        DsError.ThrowExceptionForHR(hr);
-
-                        var videoInfo = (VideoInfoHeader)Marshal.PtrToStructure(connectedMediaType.formatPtr, typeof(VideoInfoHeader));
-                        var width = videoInfo.BmiHeader.Width;
-                        var height = videoInfo.BmiHeader.Height;
-
-                        // Create bitmap
-                        using var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
-                        var bitmapData = bitmap.LockBits(
-                            new Rectangle(0, 0, width, height),
-                            ImageLockMode.WriteOnly,
-                            PixelFormat.Format24bppRgb);
-                        try
-                        {
-                            Marshal.Copy(buffer, 0, bitmapData.Scan0, buffer.Length);
-                        }
-                        finally
-                        {
-                            bitmap.UnlockBits(bitmapData);
-                        }
-
-                        // Save test image
-                        string filename = Path.Combine(TestImagePath, $"test_frame_{i}_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
-                        bitmap.Save(filename, ImageFormat.Jpeg);
-                        Console.WriteLine($"Saved test frame to: {filename}");
-
-                        await Task.Delay(500); // Wait a bit between frames
-                    }
-                    finally
-                    {
-                        handle.Free();
-                        DsUtils.FreeAMMediaType(connectedMediaType);
-                    }
-                }
-
-                // Clean up
-                mediaControl.Stop();
-                Marshal.ReleaseComObject(nullRenderer);
-                Marshal.ReleaseComObject(sampleGrabberFilter);
-                Marshal.ReleaseComObject(videoDevice);
-                Marshal.ReleaseComObject(mediaControl);
-                Marshal.ReleaseComObject(graphBuilder);
-
-                Console.WriteLine("Webcam test completed successfully!");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Webcam test failed: {ex.Message}");
-            }
-        }
-        
-        /// <summary>
-        /// Test IP camera
-        /// </summary>
-        private static async Task TestIpCameraAsync(Dictionary<string, Dictionary<string, string>> config)
-        {
-            Console.WriteLine("Testing IP camera connection...");
-            
-            try
-            {
-                // Get IP camera settings
-                string ip = GetIniValue(config, "Camera", "IP", "127.0.0.1");
-                string username = GetIniValue(config, "Camera", "Username", "admin");
-                string password = GetIniValue(config, "Camera", "Password", "admin");
-                int port = int.Parse(GetIniValue(config, "Camera", "Port", "8080"));
-                
-                Console.WriteLine($"IP Camera Details:");
-                Console.WriteLine($"IP Address: {ip}");
-                Console.WriteLine($"Port: {port}");
-                Console.WriteLine($"Username: {username}");
-                Console.WriteLine($"URL: http://{ip}:{port}/");
-                
-                // This is a placeholder for actual IP camera test
-                // Typically would use an HTTP client to test connectivity
-                Console.WriteLine("NOTE: This is a simulated test for IP camera connectivity.");
-                Console.WriteLine("Would normally attempt to connect to camera using HTTP client and test snapshot capture.");
-                
-                // Create dummy test file to show completion
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string textFilePath = Path.Combine(TestImagePath, $"ipcamera_test_{timestamp}.txt");
-                
-                File.WriteAllText(textFilePath, 
-                    $"IP CAMERA TEST\r\n" +
-                    $"Timestamp: {DateTime.Now}\r\n" +
-                    $"Camera IP: {ip}:{port}\r\n" +
-                    $"Status: Connection test completed\r\n");
-                
-                Console.WriteLine($"Test record saved to: {textFilePath}");
-                
-                Console.WriteLine("IP Camera test completed!");
-                
-                // In a real implementation, would verify the camera is reachable
-                Console.WriteLine("\nTo fully verify IP camera operation:");
-                Console.WriteLine("1. Check if camera is accessible at http://{ip}:{port}/");
-                Console.WriteLine("2. Verify authentication with provided username/password");
-                Console.WriteLine("3. Test snapshot endpoint (typically /snapshot.jpg or similar)");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"IP Camera test failed: {ex.Message}");
             }
         }
         
@@ -355,7 +139,7 @@ namespace ParkIRC.Hardware
             {
                 // Load gate settings
                 var gateConfig = LoadIniFile(Path.Combine(ConfigPath, "gate.ini"));
-                string portName = GetIniValue(gateConfig, "Gate", "COM_Port", "COM3");
+                string portName = GetIniValue(gateConfig, "Gate", "COM_Port", "/dev/ttyUSB0");
                 int baudRate = int.Parse(GetIniValue(gateConfig, "Gate", "Baud_Rate", "9600"));
                 
                 Console.WriteLine($"Serial Port Configuration:");
@@ -416,65 +200,38 @@ namespace ParkIRC.Hardware
                     serialPort.Open();
                     Console.WriteLine($"Successfully opened port {portName}");
                     
-                    // Get gate commands
-                    string openEntryCmd = GetIniValue(gateConfig, "Commands", "Open_Entry", "OPEN_ENTRY");
-                    string closeEntryCmd = GetIniValue(gateConfig, "Commands", "Close_Entry", "CLOSE_ENTRY");
-                    string statusCmd = GetIniValue(gateConfig, "Commands", "Status_Request", "STATUS");
+                    // Send test command
+                    string testCommand = "TEST\r\n";
+                    Console.WriteLine($"Sending test command: {testCommand}");
+                    serialPort.Write(testCommand);
                     
-                    // Send status request
-                    Console.WriteLine($"\nSending status request: {statusCmd}");
-                    serialPort.WriteLine(statusCmd);
-                    
-                    // Wait for a response with timeout
-                    int waitTime = 0;
-                    while (!dataReceived && waitTime < 5000)
-                    {
-                        await Task.Delay(200);
-                        waitTime += 200;
-                    }
+                    // Wait for response
+                    await Task.Delay(1000);
                     
                     if (!dataReceived)
                     {
-                        Console.WriteLine("No response received from serial port within timeout period.");
+                        Console.WriteLine("No response received from device");
                     }
-                    
-                    // Ask if we should test gate operation
-                    Console.Write("\nDo you want to test gate operation? (y/n): ");
-                    string testGate = Console.ReadLine().Trim().ToLower();
-                    
-                    if (testGate == "y")
+                    else
                     {
-                        // Test open gate command
-                        Console.WriteLine($"Sending Open Entry command: {openEntryCmd}");
-                        serialPort.WriteLine(openEntryCmd);
-                        
-                        Console.WriteLine("Waiting 5 seconds...");
-                        await Task.Delay(5000);
-                        
-                        // Test close gate command
-                        Console.WriteLine($"Sending Close Entry command: {closeEntryCmd}");
-                        serialPort.WriteLine(closeEntryCmd);
+                        Console.WriteLine("Device responded successfully!");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Serial port connection failed: {ex.Message}");
+                    Console.WriteLine($"Error testing serial port: {ex.Message}");
                 }
                 finally
                 {
-                    // Clean up
                     if (serialPort.IsOpen)
                     {
                         serialPort.Close();
                     }
-                    serialPort.Dispose();
                 }
-                
-                Console.WriteLine("Serial Port / Gate test completed!");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Serial Port test failed: {ex.Message}");
+                Console.WriteLine($"Serial port test failed: {ex.Message}");
             }
         }
         
@@ -489,84 +246,52 @@ namespace ParkIRC.Hardware
             {
                 // Load printer settings
                 var printerConfig = LoadIniFile(Path.Combine(ConfigPath, "printer.ini"));
-                string printerName = GetIniValue(printerConfig, "Printer", "Name", "EPSON TM-T82X");
+                string portName = GetIniValue(printerConfig, "Printer", "COM_Port", "/dev/ttyUSB0");
+                int baudRate = int.Parse(GetIniValue(printerConfig, "Printer", "Baud_Rate", "9600"));
                 
-                Console.WriteLine($"Configured printer: {printerName}");
+                Console.WriteLine($"Printer Configuration:");
+                Console.WriteLine($"Port: {portName}");
+                Console.WriteLine($"Baud Rate: {baudRate}");
                 
-                // List installed printers
-                Console.WriteLine("\nAvailable printers:");
-                foreach (string printer in System.Drawing.Printing.PrinterSettings.InstalledPrinters)
+                SerialPort printer = new SerialPort(portName, baudRate)
                 {
-                    string status = printer == printerName ? " (configured)" : "";
-                    Console.WriteLine($"- {printer}{status}");
-                }
+                    DataBits = 8,
+                    StopBits = StopBits.One,
+                    Parity = Parity.None,
+                    ReadTimeout = 1000,
+                    WriteTimeout = 1000
+                };
                 
-                if (!System.Drawing.Printing.PrinterSettings.InstalledPrinters.Cast<string>().Any(p => p == printerName))
+                try
                 {
-                    Console.WriteLine($"\nWARNING: Configured printer '{printerName}' not found in installed printers!");
-                }
-                
-                // This is a placeholder for actual printer test
-                // In a real implementation, would use a receipt printing library
-                Console.WriteLine("\nNOTE: This is a simulated test for printer functionality.");
-                Console.WriteLine("Would normally print a test receipt with the following content:");
-                Console.WriteLine("-----------------------------------");
-                Console.WriteLine(TestPrintContent);
-                Console.WriteLine("-----------------------------------");
-                
-                // Ask if want to test print
-                Console.Write("\nDo you want to attempt a test print? (y/n): ");
-                string testPrint = Console.ReadLine().Trim().ToLower();
-                
-                if (testPrint == "y")
-                {
-                    Console.WriteLine("Attempting test print...");
-                    await Task.Delay(2000); // Simulating print time
+                    printer.Open();
+                    Console.WriteLine($"Successfully opened printer port {portName}");
                     
-                    Console.WriteLine("If no print appeared, please check:");
-                    Console.WriteLine("1. Printer is turned on and has paper");
-                    Console.WriteLine("2. Printer name is correct");
-                    Console.WriteLine("3. Printer drivers are installed correctly");
-                    Console.WriteLine("4. There are no pending print jobs");
+                    // Send test print command
+                    Console.WriteLine($"Sending test print command...");
+                    printer.Write(TestPrintContent + "\r\n");
+                    
+                    // Wait a moment for printing
+                    await Task.Delay(2000);
+                    
+                    Console.WriteLine("Test print command sent successfully!");
                 }
-                
-                Console.WriteLine("\nPrinter test completed!");
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error testing printer: {ex.Message}");
+                }
+                finally
+                {
+                    if (printer.IsOpen)
+                    {
+                        printer.Close();
+                    }
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Printer test failed: {ex.Message}");
             }
-        }
-        
-        /// <summary>
-        /// Test all hardware components
-        /// </summary>
-        private static void TestAllHardware()
-        {
-            Console.WriteLine("===== Testing All Hardware Components =====");
-            
-            Task.Run(async () =>
-            {
-                try
-                {
-                    await TestCameraAsync();
-                    Console.WriteLine();
-                    
-                    await TestSerialPortAsync();
-                    Console.WriteLine();
-                    
-                    await TestPrinterAsync();
-                    Console.WriteLine();
-                    
-                    TestBarcodeScanner();
-                    
-                    Console.WriteLine("\nAll hardware tests completed!");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error during hardware tests: {ex.Message}");
-                }
-            }).Wait();
         }
         
         /// <summary>
@@ -578,31 +303,91 @@ namespace ParkIRC.Hardware
             
             try
             {
-                Console.WriteLine("This test requires a barcode scanner connected as a keyboard device.");
-                Console.WriteLine("The scanner should be configured to add a carriage return after each scan.\n");
+                // Load scanner settings
+                var scannerConfig = LoadIniFile(Path.Combine(ConfigPath, "scanner.ini"));
+                string portName = GetIniValue(scannerConfig, "Scanner", "COM_Port", "/dev/ttyUSB0");
+                int baudRate = int.Parse(GetIniValue(scannerConfig, "Scanner", "Baud_Rate", "9600"));
                 
-                Console.WriteLine("Please scan a barcode now (or type a value and press Enter to simulate):");
+                Console.WriteLine($"Scanner Configuration:");
+                Console.WriteLine($"Port: {portName}");
+                Console.WriteLine($"Baud Rate: {baudRate}");
                 
-                string barcode = Console.ReadLine().Trim();
-                
-                if (!string.IsNullOrEmpty(barcode))
+                SerialPort scanner = new SerialPort(portName, baudRate)
                 {
-                    Console.WriteLine($"Barcode received: {barcode}");
-                    Console.WriteLine("Barcode scanner is working correctly!");
+                    DataBits = 8,
+                    StopBits = StopBits.One,
+                    Parity = Parity.None,
+                    ReadTimeout = 1000,
+                    WriteTimeout = 1000
+                };
+                
+                try
+                {
+                    scanner.Open();
+                    Console.WriteLine($"Successfully opened scanner port {portName}");
+                    
+                    // Wait for barcode scan
+                    Console.WriteLine("Waiting for barcode scan (press Ctrl+C to cancel)...");
+                    string barcode = scanner.ReadLine();
+                    Console.WriteLine($"Scanned barcode: {barcode}");
                 }
-                else
+                catch (Exception ex)
                 {
-                    Console.WriteLine("No barcode value received.");
+                    Console.WriteLine($"Error testing barcode scanner: {ex.Message}");
+                }
+                finally
+                {
+                    if (scanner.IsOpen)
+                    {
+                        scanner.Close();
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Barcode scanner test failed: {ex.Message}");
+                Console.WriteLine($"Scanner test failed: {ex.Message}");
             }
         }
         
         /// <summary>
-        /// Create directory if it doesn't exist
+        /// Test all hardware components
+        /// </summary>
+        private static async Task TestAllHardware()
+        {
+            Console.WriteLine("===== Testing All Hardware =====");
+            
+            try
+            {
+                // Test camera
+                Console.WriteLine("\nTesting Camera...");
+                var hardwareTester = new HardwareTester(null);
+                if (!await hardwareTester.TestCameraConnectionAsync())
+                {
+                    Console.WriteLine("Camera test failed!");
+                }
+                
+                // Test serial port
+                Console.WriteLine("\nTesting Serial Port...");
+                await TestSerialPortAsync();
+                
+                // Test printer
+                Console.WriteLine("\nTesting Printer...");
+                await TestPrinterAsync();
+                
+                // Test barcode scanner
+                Console.WriteLine("\nTesting Barcode Scanner...");
+                TestBarcodeScanner();
+                
+                Console.WriteLine("\nAll hardware tests completed!");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error testing hardware: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Ensure directory exists
         /// </summary>
         private static void EnsureDirectoryExists(string path)
         {
@@ -613,60 +398,139 @@ namespace ParkIRC.Hardware
         }
         
         /// <summary>
-        /// Load and parse INI file
+        /// Load INI file into dictionary
         /// </summary>
-        private static Dictionary<string, Dictionary<string, string>> LoadIniFile(string path)
+        private static Dictionary<string, Dictionary<string, string>> LoadIniFile(string filePath)
         {
-            var iniData = new Dictionary<string, Dictionary<string, string>>();
-            string currentSection = "";
+            var config = new Dictionary<string, Dictionary<string, string>>();
             
-            if (!File.Exists(path))
+            if (File.Exists(filePath))
             {
-                Console.WriteLine($"WARNING: Config file not found: {path}");
-                return iniData;
-            }
-            
-            foreach (string line in File.ReadAllLines(path))
-            {
-                string trimmedLine = line.Trim();
+                string[] lines = File.ReadAllLines(filePath);
+                string? currentSection = null;
                 
-                // Skip comments and empty lines
-                if (string.IsNullOrWhiteSpace(trimmedLine) || trimmedLine.StartsWith("#") || trimmedLine.StartsWith(";"))
-                    continue;
-                
-                // Section header
-                if (trimmedLine.StartsWith("[") && trimmedLine.EndsWith("]"))
+                foreach (var line in lines)
                 {
-                    currentSection = trimmedLine.Substring(1, trimmedLine.Length - 2);
-                    if (!iniData.ContainsKey(currentSection))
+                    string trimmed = line.Trim();
+                    
+                    if (trimmed.StartsWith("["))
                     {
-                        iniData[currentSection] = new Dictionary<string, string>();
+                        currentSection = trimmed.Trim('[', ']');
+                        if (!config.ContainsKey(currentSection))
+                        {
+                            config[currentSection] = new Dictionary<string, string>();
+                        }
                     }
-                }
-                // Key-value pair
-                else if (trimmedLine.Contains("="))
-                {
-                    string[] parts = trimmedLine.Split(new[] { '=' }, 2);
-                    if (parts.Length == 2 && !string.IsNullOrEmpty(currentSection))
+                    else if (!string.IsNullOrEmpty(trimmed) && currentSection != null)
                     {
-                        iniData[currentSection][parts[0].Trim()] = parts[1].Trim();
+                        int equalsIndex = trimmed.IndexOf('=');
+                        if (equalsIndex > 0)
+                        {
+                            string key = trimmed.Substring(0, equalsIndex).Trim();
+                            string value = trimmed.Substring(equalsIndex + 1).Trim();
+                            config[currentSection][key] = value;
+                        }
                     }
                 }
             }
             
-            return iniData;
+            return config;
         }
         
         /// <summary>
-        /// Get value from INI data
+        /// Get value from INI configuration
         /// </summary>
-        private static string GetIniValue(Dictionary<string, Dictionary<string, string>> iniData, string section, string key, string defaultValue)
+        private static string GetIniValue(Dictionary<string, Dictionary<string, string>> config, string section, string key, string defaultValue)
         {
-            if (iniData.ContainsKey(section) && iniData[section].ContainsKey(key))
+            if (config.TryGetValue(section, out var sectionValues) &&
+                sectionValues.TryGetValue(key, out var value))
             {
-                return iniData[section][key];
+                return value;
             }
             return defaultValue;
+        }
+        
+        public async Task<bool> TestCameraConnectionAsync(int deviceIndex = 0)
+        {
+            try
+            {
+                _videoCapture = new VideoCapture(deviceIndex);
+                if (!_videoCapture.IsOpened())
+                {
+                    _logger.LogError("Failed to open camera device {DeviceIndex}", deviceIndex);
+                    return false;
+                }
+
+                // Capture a frame to test
+                using var mat = new Mat();
+                if (!_videoCapture.Read(mat))
+                {
+                    _logger.LogError("Failed to capture frame from camera");
+                    return false;
+                }
+
+                _logger.LogInformation("Camera connection test successful");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error testing camera connection");
+                return false;
+            }
+            finally
+            {
+                _videoCapture?.Dispose();
+            }
+        }
+
+        public async Task<string> CaptureTestImageAsync(int deviceIndex = 0)
+        {
+            try
+            {
+                if (_videoCapture == null || !_videoCapture.IsOpened())
+                {
+                    _videoCapture = new VideoCapture(deviceIndex);
+                    if (!_videoCapture.IsOpened())
+                    {
+                        throw new Exception($"Failed to open camera device {deviceIndex}");
+                    }
+                }
+
+                using (var mat = new Mat())
+                {
+                    if (!_videoCapture.Read(mat))
+                    {
+                        throw new Exception("Failed to capture frame from camera");
+                    }
+
+                    // Convert Mat to byte array
+                    byte[] imageData = mat.ToBytes();
+
+                    // Create filename with timestamp
+                    string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                    string filename = $"test_capture_{timestamp}.jpg";
+                    string fullPath = Path.Combine(TestImagePath, filename);
+                    Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+
+                    // Create and save image using ImageSharp
+                    using var image = SixLabors.ImageSharp.Image.Load<Rgba32>(imageData);
+                    using var stream = File.Create(fullPath);
+                    image.Save(stream, new JpegEncoder());
+
+                    _logger.LogInformation($"Test image captured and saved to {fullPath}");
+                    return fullPath;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error capturing test image");
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            _videoCapture?.Dispose();
         }
     }
 }

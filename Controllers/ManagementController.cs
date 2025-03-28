@@ -1555,11 +1555,11 @@ namespace ParkIRC.Controllers
 
         [HttpGet]
         public async Task<IActionResult> VehicleHistory(
-            string status = null, 
+            string? status = null, 
             DateTime? startDate = null, 
             DateTime? endDate = null, 
-            string vehicleType = null, 
-            string plateNumber = null, 
+            string? vehicleType = null, 
+            string? plateNumber = null, 
             int page = 1, 
             int pageSize = 10)
         {
@@ -1626,12 +1626,12 @@ namespace ParkIRC.Controllers
 
         [HttpGet]
         public async Task<IActionResult> ExportVehicleHistory(
-            string status = null,
+            string? status = null,
             DateTime? startDate = null,
             DateTime? endDate = null,
-            string vehicleType = null,
-            string plateNumber = null,
-            string format = "excel")
+            string? vehicleType = null,
+            string? plateNumber = null,
+            string? format = "excel")
         {
             // Similar query building as above
             var query = _context.ParkingTransactions

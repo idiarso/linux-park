@@ -2,8 +2,6 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using System.IO;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.Text;
 using QRCoder;
 using ParkIRC.Data;
@@ -13,6 +11,10 @@ using ZXing;
 using ZXing.Common;
 using ZXing.QrCode;
 using ParkIRC.Hardware;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace ParkIRC.Services
 {
@@ -110,10 +112,10 @@ namespace ParkIRC.Services
 
         private string GenerateBarcode(string ticketNumber)
         {
-            var barcodeWriter = new BarcodeWriter<Bitmap>
+            var barcodeWriter = new BarcodeWriter<bool[,]>
             {
                 Format = BarcodeFormat.QR_CODE,
-                Options = new EncodingOptions
+                Options = new QrCodeEncodingOptions
                 {
                     Width = 300,
                     Height = 300,
@@ -121,10 +123,21 @@ namespace ParkIRC.Services
                 }
             };
 
-            var barcodeImage = barcodeWriter.Write(ticketNumber);
+            var barcodeMatrix = barcodeWriter.Write(ticketNumber);
             var imagePath = Path.Combine("barcodes", $"{ticketNumber}.png");
             Directory.CreateDirectory("barcodes");
-            barcodeImage.Save(imagePath);
+
+            using var image = new Image<Rgba32>(barcodeMatrix.GetLength(1), barcodeMatrix.GetLength(0));
+            for (int y = 0; y < barcodeMatrix.GetLength(0); y++)
+            {
+                for (int x = 0; x < barcodeMatrix.GetLength(1); x++)
+                {
+                    image[x, y] = barcodeMatrix[y, x] ? new Rgba32(0, 0, 0) : new Rgba32(255, 255, 255);
+                }
+            }
+
+            using var stream = File.Create(imagePath);
+            image.Save(stream, new PngEncoder());
             return imagePath;
         }
 
@@ -181,11 +194,11 @@ namespace ParkIRC.Services
             }
         }
 
-        private byte[] ImageToByte(System.Drawing.Image image)
+        private byte[] ImageToByte(Image image)
         {
             using (var stream = new MemoryStream())
             {
-                image.Save(stream, System.Drawing.Imaging.ImageFormat.Png);
+                image.Save(stream, new PngEncoder());
                 return stream.ToArray();
             }
         }

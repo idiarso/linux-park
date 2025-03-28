@@ -1,16 +1,16 @@
 using System;
-using System.Threading.Tasks;
 using System.IO;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using OpenCvSharp;
+using OpenCvSharp.Extensions;
+using ParkIRC.Hardware;
 using ParkIRC.Models;
 using ParkIRC.Data;
 using Microsoft.EntityFrameworkCore;
-using Emgu.CV;
-using Emgu.CV.CvEnum;
-using Emgu.CV.Structure;
-using System.Drawing;
-using System.Drawing.Imaging;
-using Microsoft.Extensions.Configuration;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace ParkIRC.Services
 {
@@ -28,12 +28,10 @@ namespace ParkIRC.Services
     public class CameraService : ICameraService, IAsyncDisposable
     {
         private readonly ILogger<CameraService> _logger;
-        private readonly IConfiguration _configuration;
+        private readonly IHardwareManager _hardwareManager;
         private readonly ApplicationDbContext _context;
         private bool _isInitialized;
         private VideoCapture? _videoCapture;
-        private readonly string _cameraType;
-        private CameraSettings? _currentSettings;
         private readonly string _imageSavePath;
         private bool _disposed;
         private readonly SemaphoreSlim _initLock = new(1, 1);
@@ -41,15 +39,14 @@ namespace ParkIRC.Services
 
         public CameraService(
             ILogger<CameraService> logger,
-            IConfiguration configuration,
+            IHardwareManager hardwareManager,
             ApplicationDbContext context)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _hardwareManager = hardwareManager ?? throw new ArgumentNullException(nameof(hardwareManager));
             _context = context ?? throw new ArgumentNullException(nameof(context));
             
             _isInitialized = false;
-            _cameraType = configuration.GetValue<string>("Camera:Type", "Webcam");
             _imageSavePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "camera");
             Directory.CreateDirectory(_imageSavePath);
         }
@@ -94,21 +91,18 @@ namespace ParkIRC.Services
             try
             {
                 _logger.LogInformation("Initializing camera service...");
-                _currentSettings = await GetSettingsAsync();
-
-                if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
+                
+                // Initialize video capture
+                _videoCapture = new VideoCapture(0); // Default webcam
+                if (!_videoCapture.IsOpened())
                 {
-                    int deviceIndex = _configuration.GetValue<int>("Camera:DeviceIndex", 0);
-                    _videoCapture = new VideoCapture(deviceIndex);
-                    
-                    if (_videoCapture == null || !_videoCapture.IsOpened)
-                    {
-                        throw new InvalidOperationException("No video devices found");
-                    }
-
-                    _videoCapture.Set(CapProp.FrameWidth, _currentSettings.ResolutionWidth);
-                    _videoCapture.Set(CapProp.FrameHeight, _currentSettings.ResolutionHeight);
+                    throw new HardwareException("Failed to initialize camera");
                 }
+
+                // Set camera properties
+                _videoCapture.Set(VideoCaptureProperties.FrameWidth, 640);
+                _videoCapture.Set(VideoCaptureProperties.FrameHeight, 480);
+                _videoCapture.Set(VideoCaptureProperties.Fps, 30);
 
                 _isInitialized = true;
                 return true;
@@ -139,28 +133,32 @@ namespace ParkIRC.Services
             {
                 _logger.LogInformation("Capturing image...");
                 
-                if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
+                if (_videoCapture == null)
                 {
-                    if (_videoCapture == null)
-                    {
-                        throw new InvalidOperationException("Video capture device is not initialized");
-                    }
+                    throw new InvalidOperationException("Video capture device is not initialized");
+                }
 
-                    using var frame = _videoCapture.QueryFrame();
-                    if (frame == null)
+                using (var mat = new Mat())
+                {
+                    if (!_videoCapture.Read(mat))
                     {
                         throw new InvalidOperationException("Failed to capture frame from camera");
                     }
 
-                    string fileName = $"capture_{DateTime.Now:yyyyMMddHHmmss}.jpg";
-                    string filePath = Path.Combine(_imageSavePath, fileName);
+                    // Convert Mat to byte array
+                    byte[] imageData = mat.ToBytes();
                     
-                    await Task.Run(() => frame.Save(filePath));
-                    return filePath;
-                }
-                else
-                {
-                    throw new NotImplementedException("IP camera capture not implemented");
+                    // Create ImageSharp image from byte array
+                    using var image = Image.Load<Rgba32>(imageData);
+                    
+                    // Save the image
+                    string fileName = $"capture_{DateTime.Now:yyyyMMddHHmmss}.jpg";
+                    string fullPath = Path.Combine(_imageSavePath, fileName);
+                    Directory.CreateDirectory(Path.GetDirectoryName(fullPath));
+                    
+                    using var stream = File.Create(fullPath);
+                    image.Save(stream, new JpegEncoder());
+                    return fullPath;
                 }
             }
             catch (Exception ex)
@@ -223,9 +221,8 @@ namespace ParkIRC.Services
                 // Update current settings if initialized
                 if (_isInitialized && _videoCapture != null)
                 {
-                    _currentSettings = settings;
-                    _videoCapture.Set(CapProp.FrameWidth, settings.ResolutionWidth);
-                    _videoCapture.Set(CapProp.FrameHeight, settings.ResolutionHeight);
+                    _videoCapture.Set(VideoCaptureProperties.FrameWidth, settings.ResolutionWidth);
+                    _videoCapture.Set(VideoCaptureProperties.FrameHeight, settings.ResolutionHeight);
                 }
 
                 return true;
@@ -245,23 +242,18 @@ namespace ParkIRC.Services
             {
                 _logger.LogInformation("Testing camera connection...");
                 
-                if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
+                if (_videoCapture == null || !_videoCapture.IsOpened())
                 {
-                    int deviceIndex = _configuration.GetValue<int>("Camera:DeviceIndex", 0);
-                    
-                    using var testCapture = new VideoCapture(deviceIndex);
-                    if (!testCapture.IsOpened)
-                    {
-                        return false;
-                    }
+                    throw new HardwareException("Camera is not initialized");
+                }
 
-                    using var frame = await Task.Run(() => testCapture.QueryFrame());
-                    return frame != null;
-                }
-                else
+                using var frame = new Mat();
+                if (!_videoCapture.Read(frame))
                 {
-                    throw new NotImplementedException("IP camera test not implemented");
+                    throw new HardwareException("Failed to capture frame from camera");
                 }
+
+                return true;
             }
             catch (Exception ex)
             {
@@ -272,7 +264,7 @@ namespace ParkIRC.Services
 
         public async Task<byte[]> CaptureImage()
         {
-            if (_videoCapture == null && _cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
+            if (_videoCapture == null)
             {
                 throw new InvalidOperationException("Video capture device is not initialized");
             }
@@ -283,62 +275,28 @@ namespace ParkIRC.Services
             {
                 _logger.LogInformation("Capturing image as byte array...");
                 
-                if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
+                if (_videoCapture == null)
                 {
-                    if (_videoCapture == null)
-                    {
-                        throw new InvalidOperationException("Video capture device is not initialized");
-                    }
+                    throw new InvalidOperationException("Video capture device is not initialized");
+                }
 
-                    using var frame = _videoCapture.QueryFrame();
-                    if (frame == null)
+                using (var mat = new Mat())
+                {
+                    if (!_videoCapture.Read(mat))
                     {
                         throw new InvalidOperationException("Failed to capture frame from camera");
                     }
 
+                    // Convert Mat to byte array
+                    byte[] imageData = mat.ToBytes();
+                    
+                    // Create ImageSharp image from byte array
+                    using var image = Image.Load<Rgba32>(imageData);
+                    
+                    // Save the image to MemoryStream
                     using var ms = new MemoryStream();
-                    using var bitmap = new Bitmap(frame.Width, frame.Height, PixelFormat.Format24bppRgb);
-                    
-                    // Lock bits to directly access bitmap data
-                    var bitmapData = bitmap.LockBits(
-                        new Rectangle(0, 0, frame.Width, frame.Height),
-                        ImageLockMode.WriteOnly,
-                        PixelFormat.Format24bppRgb);
-                    
-                    try
-                    {
-                        // Calculate the size of the data
-                        int dataSize = frame.Width * frame.Height * frame.NumberOfChannels;
-                        
-                        // Create a byte array to hold the image data
-                        byte[] imageData = new byte[dataSize];
-                        
-                        // Copy data from Mat to byte array
-                        System.Runtime.InteropServices.Marshal.Copy(
-                            frame.DataPointer, 
-                            imageData, 
-                            0, 
-                            dataSize);
-                        
-                        // Copy byte array to bitmap
-                        System.Runtime.InteropServices.Marshal.Copy(
-                            imageData, 
-                            0, 
-                            bitmapData.Scan0, 
-                            dataSize);
-                    }
-                    finally
-                    {
-                        // Unlock the bitmap bits
-                        bitmap.UnlockBits(bitmapData);
-                    }
-                    
-                    bitmap.Save(ms, ImageFormat.Jpeg);
+                    image.Save(ms, new JpegEncoder());
                     return ms.ToArray();
-                }
-                else
-                {
-                    throw new NotImplementedException("IP camera capture not implemented");
                 }
             }
             catch (Exception ex)

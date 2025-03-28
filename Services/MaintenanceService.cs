@@ -352,10 +352,10 @@ namespace ParkIRC.Services
                 var testConnection = dbContext.Database.GetDbConnection().ConnectionString
                     .Replace(dbContext.Database.GetDbConnection().Database, testDbName);
                 
-                using var testContext = new ApplicationDbContext(
-                    new DbContextOptionsBuilder<ApplicationDbContext>()
-                        .UseSqlServer(testConnection)
-                        .Options);
+                var optionsBuilder = new DbContextOptionsBuilder<ApplicationDbContext>();
+                optionsBuilder.UseNpgsql(testConnection);
+                
+                using var testContext = new ApplicationDbContext(optionsBuilder.Options);
                 
                 if (await testContext.Database.CanConnectAsync())
                 {
