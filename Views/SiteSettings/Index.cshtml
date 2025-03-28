@@ -73,6 +73,29 @@
                             </div>
                         </div>
 
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">Pengaturan Database</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="form-group">
+                                            <label>PostgreSQL Connection String</label>
+                                            <input type="password" class="form-control" name="PostgresConnectionString" 
+                                                   value="@Model.PostgresConnectionString" placeholder="Host=localhost;Database=parkir;Username=postgres;Password=your_password">
+                                            <small class="form-text text-muted">
+                                                Format: Host=localhost;Database=parkir;Username=postgres;Password=your_password
+                                            </small>
+                                        </div>
+                                        <button type="submit" name="action" value="updateDb" class="btn btn-warning mt-3">
+                                            <i class="fas fa-database"></i> Update Database
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="mt-4">
                             <button type="submit" class="btn btn-primary">
                                 <i class="fas fa-save"></i> Simpan Pengaturan

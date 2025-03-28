@@ -13,5 +13,6 @@ namespace ParkIRC.Models
         public bool ShowLogo { get; set; } = true;
         public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
         public string UpdatedBy { get; set; } = string.Empty;
+        public string PostgresConnectionString { get; set; } = string.Empty;
     }
-} 
+}

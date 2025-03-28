@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using ParkIRC.Models;
 using ParkIRC.Data;
+using Npgsql;
 
 namespace ParkIRC.Controllers
 {
@@ -43,8 +44,44 @@ namespace ParkIRC.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> Update(SiteSettings model, IFormFile logo, IFormFile favicon)
+        public async Task<IActionResult> Update(SiteSettings model, IFormFile logo, IFormFile favicon, string action)
         {
+            if (action == "updateDb")
+            {
+                try
+                {
+                    using (var conn = new NpgsqlConnection(model.PostgresConnectionString))
+                    {
+                        await conn.OpenAsync();
+                        using (var cmd = new NpgsqlCommand())
+                        {
+                            cmd.Connection = conn;
+                            cmd.CommandText = @"
+                                INSERT INTO ""SiteSettings"" (""Id"", ""SiteName"", ""LastUpdated"", ""UpdatedBy"")
+                                VALUES (@Id, @SiteName, @LastUpdated, @UpdatedBy)
+                                ON CONFLICT (""Id"") 
+                                DO UPDATE SET 
+                                    ""SiteName"" = EXCLUDED.""SiteName"",
+                                    ""LastUpdated"" = EXCLUDED.""LastUpdated"",
+                                    ""UpdatedBy"" = EXCLUDED.""UpdatedBy""";
+
+                            cmd.Parameters.AddWithValue("@Id", "1");
+                            cmd.Parameters.AddWithValue("@SiteName", "Parkir RSI");
+                            cmd.Parameters.AddWithValue("@LastUpdated", DateTime.UtcNow);
+                            cmd.Parameters.AddWithValue("@UpdatedBy", User.Identity.Name);
+
+                            await cmd.ExecuteNonQueryAsync();
+                        }
+                    }
+                    TempData["Message"] = "Database berhasil diupdate";
+                }
+                catch (Exception ex)
+                {
+                    TempData["Error"] = $"Error updating database: {ex.Message}";
+                }
+                return RedirectToAction(nameof(Index));
+            }
+
             if (ModelState.IsValid)
             {
                 var settings = await _context.SiteSettings.FirstAsync();

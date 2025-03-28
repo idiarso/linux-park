@@ -493,3 +493,5 @@ PS D:\AAA\Park28Maret-master> # Clean the project
 >>
 >> # Build the project
 >> dotnet build ParkIRC.csproj
+
+dotnet run --project ParkIRC.csproj
