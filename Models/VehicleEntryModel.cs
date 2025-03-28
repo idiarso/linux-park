@@ -15,5 +15,7 @@ namespace ParkIRC.Models
         public string? DriverName { get; set; }
 
         public string? PhoneNumber { get; set; }
+
+        public string? EntryImagePath { get; set; }
     }
 }

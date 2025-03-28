@@ -1,0 +1,39 @@
+@{
+    ViewData["Title"] = "Prisma Integration";
+}
+
+<div class="container-fluid">
+    <div class="card">
+        <div class="card-header">
+            <h5 class="card-title">Prisma Integration Demo</h5>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <p>Prisma telah berhasil terintegrasi dengan aplikasi. Prisma digunakan untuk mengakses database PostgreSQL secara langsung menggunakan Node.js.</p>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h6>Available Parking Spaces</h6>
+                        </div>
+                        <div class="card-body">
+                            <a href="@Url.Action("AvailableSpaces", "Prisma")" class="btn btn-primary">
+                                <i class="fas fa-parking"></i> View Available Spaces
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            console.log("Prisma integration page loaded");
+        });
+    </script>
+} 

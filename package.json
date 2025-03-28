@@ -2,7 +2,8 @@
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.7.2",
     "@microsoft/signalr": "^8.0.7",
-    "@prisma/client": "^6.5.0"
+    "@prisma/client": "^6.5.0",
+    "pg": "^8.14.1"
   },
   "name": "park28maret-master",
   "version": "1.0.0",

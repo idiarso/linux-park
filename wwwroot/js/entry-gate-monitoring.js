@@ -8,7 +8,7 @@ const entryGateMonitoring = {
     
     setupSignalR() {
         this.connection = new signalR.HubConnectionBuilder()
-            .withUrl("/parkinghub")
+            .withUrl("/parkingHub")
             .withAutomaticReconnect()
             .build();
         

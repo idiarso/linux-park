@@ -191,7 +191,7 @@ namespace ParkIRC.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> VehicleEntry(VehicleEntryViewModel model)
+        public async Task<IActionResult> VehicleEntry([FromBody] VehicleEntryModel model)
         {
             if (!ModelState.IsValid)
             {
@@ -200,14 +200,24 @@ namespace ParkIRC.Controllers
 
             try
             {
+                // Check if vehicle is already parked
+                var existingVehicle = await _context.Vehicles
+                    .FirstOrDefaultAsync(v => v.VehicleNumber == model.VehicleNumber && v.IsParked);
+
+                if (existingVehicle != null)
+                {
+                    return Json(new { success = false, message = "Kendaraan sudah terparkir" });
+                }
+
                 var vehicle = new Vehicle
                 {
                     VehicleNumber = model.VehicleNumber,
                     VehicleType = model.VehicleType,
                     DriverName = model.DriverName,
-                    ContactNumber = model.ContactNumber,
+                    PhoneNumber = model.PhoneNumber,
                     IsParked = true,
-                    EntryTime = DateTime.UtcNow
+                    EntryTime = DateTime.UtcNow,
+                    Status = "Active"
                 };
 
                 // Assign parking space
@@ -220,8 +230,18 @@ namespace ParkIRC.Controllers
                 vehicle.ParkingSpaceId = parkingSpace.Id;
                 vehicle.ParkingSpace = parkingSpace;
 
+                // Create parking transaction
+                var transaction = new ParkingTransaction
+                {
+                    Vehicle = vehicle,
+                    EntryTime = DateTime.Now,
+                    TransactionNumber = GenerateTransactionNumber(),
+                    Status = "Active"
+                };
+
                 // Save changes
                 await _context.Vehicles.AddAsync(vehicle);
+                await _context.ParkingTransactions.AddAsync(transaction);
                 await _context.SaveChangesAsync();
 
                 // Update dashboard

@@ -6,21 +6,66 @@
 
 <div class="container-fluid">
     <div class="row">
-        <!-- Camera Feed and Controls -->
+        <!-- Vehicle Details Form -->
         <div class="col-lg-6">
             <div class="card shadow mb-4">
                 <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-camera me-2"></i>Kamera ANPR</h6>
+                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-car me-2"></i>Detail Kendaraan</h6>
+                </div>
+                <div class="card-body">
+                    <form id="vehicleEntryForm">
+                        @Html.AntiForgeryToken()
+                        <div class="mb-3">
+                            <label for="vehicleType" class="form-label">Jenis Kendaraan</label>
+                            <select class="form-control" id="vehicleType" name="vehicleType" required>
+                                <option value="">Pilih Jenis Kendaraan</option>
+                                <option value="Car">Mobil</option>
+                                <option value="Motorcycle">Motor</option>
+                                <option value="Truck">Truk</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="vehicleNumber" class="form-label">Nomor Kendaraan</label>
+                            <input type="text" class="form-control" id="vehicleNumber" name="vehicleNumber" required 
+                                   placeholder="Contoh: B 1234 ABC"
+                                   pattern="^[A-Z]{1,2}\s\d{1,4}\s[A-Z]{1,3}$"
+                                   title="Format: [1-2 Huruf] [1-4 Angka] [1-3 Huruf], contoh: B 1234 ABC"/>
+                            <small class="text-muted">Format: [Huruf] [Angka] [Huruf], contoh: B 1234 ABC</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="driverName" class="form-label">Nama Pengemudi (Opsional)</label>
+                            <input type="text" class="form-control" id="driverName" name="driverName" />
+                        </div>
+                        <div class="mb-3">
+                            <label for="phoneNumber" class="form-label">Nomor Kontak (Opsional)</label>
+                            <input type="tel" class="form-control" id="phoneNumber" name="phoneNumber" />
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-2"></i>Simpan
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera Feed and Controls (Optional) -->
+        <div class="col-lg-6">
+            <div class="card shadow mb-4">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-camera me-2"></i>Kamera ANPR (Opsional)</h6>
+                    <button id="enableCamera" class="btn btn-sm btn-primary">
+                        <i class="fas fa-video me-1"></i>Aktifkan Kamera
+                    </button>
                 </div>
                 <div class="card-body">
                     <div class="video-container mb-3" style="min-height: 300px; background-color: #f8f9fc; border: 1px solid #e3e6f0;">
-                        <video id="videoFeed" style="width: 100%; height: 300px; object-fit: cover;" autoplay playsinline></video>
+                        <video id="videoFeed" style="width: 100%; height: 300px; object-fit: cover; display: none;" autoplay playsinline></video>
                         <canvas id="captureCanvas" style="display: none;"></canvas>
+                        <div id="cameraPlaceholder" class="d-flex align-items-center justify-content-center h-100">
+                            <p class="text-muted">Klik tombol "Aktifkan Kamera" untuk menggunakan fitur ANPR</p>
+                        </div>
                     </div>
-                    <div class="camera-controls d-flex gap-2">
-                        <button id="startCamera" class="btn btn-primary">
-                            <i class="fas fa-video me-2"></i>Mulai Kamera
-                        </button>
+                    <div class="camera-controls d-flex gap-2" style="display: none;">
                         <button id="captureImage" class="btn btn-success" disabled>
                             <i class="fas fa-camera me-2"></i>Ambil Gambar
                         </button>
@@ -32,7 +77,7 @@
             </div>
 
             <!-- ANPR Results -->
-            <div class="card shadow mb-4">
+            <div id="anprResultsCard" class="card shadow mb-4" style="display: none;">
                 <div class="card-header py-3">
                     <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-search me-2"></i>Hasil Deteksi ANPR</h6>
                 </div>
@@ -49,48 +94,6 @@
                         </div>
                         <small class="text-muted">Klik "Gunakan" untuk mengisi nomor kendaraan otomatis</small>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Vehicle Details Form -->
-        <div class="col-lg-6">
-            <div class="card shadow mb-4">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-car me-2"></i>Detail Kendaraan</h6>
-                </div>
-                <div class="card-body">
-                    <form id="vehicleEntryForm">
-                        @Html.AntiForgeryToken()
-                        <div class="mb-3">
-                            <label for="vehicleType" class="form-label">Jenis Kendaraan</label>
-                            <select class="form-control" id="vehicleType" name="vehicleType" required>
-                                <option value="">Pilih Jenis Kendaraan</option>
-                                <option value="car">Mobil</option>
-                                <option value="motorcycle">Motor</option>
-                                <option value="truck">Truk</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label for="vehicleNumber" class="form-label">Nomor Kendaraan</label>
-                            <input type="text" class="form-control" id="vehicleNumber" name="vehicleNumber" required 
-                                   placeholder="Contoh: B 1234 ABC"
-                                   pattern="^[A-Z]{1,2}\s\d{1,4}\s[A-Z]{1,3}$"
-                                   title="Format: [1-2 Huruf] [1-4 Angka] [1-3 Huruf], contoh: B 1234 ABC"/>
-                            <small class="text-muted">Format: [Huruf] [Angka] [Huruf], contoh: B 1234 ABC</small>
-                        </div>
-                        <div class="mb-3">
-                            <label for="driverName" class="form-label">Nama Pengemudi (Opsional)</label>
-                            <input type="text" class="form-control" id="driverName" name="driverName" />
-                        </div>
-                        <div class="mb-3">
-                            <label for="contactNumber" class="form-label">Nomor Kontak (Opsional)</label>
-                            <input type="tel" class="form-control" id="contactNumber" name="contactNumber" />
-                        </div>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save me-2"></i>Simpan
-                        </button>
-                    </form>
                 </div>
             </div>
         </div>
@@ -162,7 +165,7 @@
         let videoStream;
         const videoElement = document.getElementById('videoFeed');
         const canvas = document.getElementById('captureCanvas');
-        const startButton = document.getElementById('startCamera');
+        const enableCameraButton = document.getElementById('enableCamera');
         const captureButton = document.getElementById('captureImage');
         const stopButton = document.getElementById('stopCamera');
         const anprResult = document.getElementById('anprResult');
@@ -171,19 +174,26 @@
         const usePlateButton = document.getElementById('usePlate');
         const vehicleNumberInput = document.getElementById('vehicleNumber');
         const vehicleEntryForm = document.getElementById('vehicleEntryForm');
+        const cameraControls = document.querySelector('.camera-controls');
+        const anprResultsCard = document.getElementById('anprResultsCard');
+        const cameraPlaceholder = document.getElementById('cameraPlaceholder');
 
-        // Camera Controls
-        startButton.addEventListener('click', async () => {
+        // Enable Camera Button Click Handler
+        enableCameraButton.addEventListener('click', async () => {
             try {
                 videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
                 videoElement.srcObject = videoStream;
-                startButton.disabled = true;
+                videoElement.style.display = 'block';
+                cameraPlaceholder.style.display = 'none';
+                cameraControls.style.display = 'flex';
+                anprResultsCard.style.display = 'block';
+                enableCameraButton.style.display = 'none';
                 captureButton.disabled = false;
                 stopButton.disabled = false;
             } catch (err) {
                 console.error('Error accessing camera:', err);
                 anprResult.className = 'alert alert-danger';
-                anprResult.innerHTML = '<i class="fas fa-exclamation-circle me-2"></i>Error accessing camera. Please check permissions.';
+                anprResult.innerHTML = '<i class="fas fa-exclamation-circle me-2"></i>Tidak dapat mengakses kamera. Pastikan kamera tersedia dan izin diberikan.';
             }
         });
 
@@ -191,7 +201,11 @@
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
                 videoElement.srcObject = null;
-                startButton.disabled = false;
+                videoElement.style.display = 'none';
+                cameraPlaceholder.style.display = 'flex';
+                cameraControls.style.display = 'none';
+                anprResultsCard.style.display = 'none';
+                enableCameraButton.style.display = 'block';
                 captureButton.disabled = true;
                 stopButton.disabled = true;
             }
@@ -250,163 +264,91 @@
             vehicleNumberInput.value = plateNumberElement.textContent;
         });
 
-        // Form submission
-        vehicleEntryForm.addEventListener('submit', async (e) => {
+        // Form submission handler
+        vehicleEntryForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             
-            // Get antiforgery token
-            const token = document.querySelector('input[name="__RequestVerificationToken"]').value;
-            if (!token) {
-                console.error('Antiforgery token not found');
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error!',
-                    text: 'Security token missing. Please refresh the page and try again.'
-                });
-                return;
-            }
-            
-            // Validate form inputs
-            const vehicleType = document.getElementById('vehicleType');
-            const vehicleNumber = document.getElementById('vehicleNumber');
-
-            // Reset previous error states
-            [vehicleType, vehicleNumber].forEach(input => {
-                input.classList.remove('is-invalid');
-                const feedback = input.nextElementSibling;
-                if (feedback && feedback.classList.contains('invalid-feedback')) {
-                    feedback.remove();
-                }
-            });
-
-            let hasError = false;
-
-            // Enhanced validation
-            if (!vehicleType.value) {
-                showFieldError(vehicleType, 'Jenis kendaraan wajib dipilih');
-                hasError = true;
-            }
-
-            const vehicleNumberRegex = /^[A-Z]{1,2}\s\d{1,4}\s[A-Z]{1,3}$/;
-            if (!vehicleNumber.value || !vehicleNumberRegex.test(vehicleNumber.value.toUpperCase())) {
-                showFieldError(vehicleNumber, 'Format nomor kendaraan tidak valid. Contoh: B 1234 ABC');
-                hasError = true;
-            }
-
-            if (hasError) {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Validasi Error',
-                    text: 'Mohon periksa kembali data yang diinput'
-                });
-                return;
-            }
-
-            const submitButton = vehicleEntryForm.querySelector('button[type="submit"]');
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...';
-
             try {
                 // Prepare form data
                 const formData = {
-                    vehicleType: vehicleType.value,
-                    vehicleNumber: vehicleNumber.value.toUpperCase(),
-                    driverName: document.getElementById('driverName').value.trim() || null,
-                    contactNumber: document.getElementById('contactNumber').value.trim() || null
+                    VehicleNumber: document.getElementById('vehicleNumber').value.toUpperCase(),
+                    VehicleType: document.getElementById('vehicleType').value,
+                    DriverName: document.getElementById('driverName').value.trim() || null,
+                    PhoneNumber: document.getElementById('phoneNumber').value.trim() || null
                 };
 
-                console.log('Submitting form data:', formData);
+                // Validate form
+                if (!formData.VehicleNumber) {
+                    throw new Error('Nomor kendaraan wajib diisi');
+                }
 
-                const response = await fetch('/Parking/RecordEntry', {
+                if (!formData.VehicleType) {
+                    throw new Error('Jenis kendaraan wajib dipilih');
+                }
+
+                // Show loading state
+                const submitButton = this.querySelector('button[type="submit"]');
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Menyimpan...';
+
+                const response = await fetch('/Parking/VehicleEntry', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'RequestVerificationToken': token
+                        'RequestVerificationToken': document.querySelector('input[name="__RequestVerificationToken"]').value
                     },
                     body: JSON.stringify(formData)
                 });
 
-                console.log('Response status:', response.status);
-                let result;
-                try {
-                    result = await response.json();
-                    console.log('Response data:', result);
-                } catch (jsonError) {
-                    console.error('Failed to parse JSON response:', jsonError);
-                    throw new Error('Invalid server response format');
-                }
+                const result = await response.json();
 
-                if (response.ok) {
+                if (result.success) {
+                    // Show success notification
                     Swal.fire({
                         icon: 'success',
-                        title: 'Berhasil!',
-                        text: result.message || 'Data kendaraan berhasil disimpan.',
-                        showConfirmButton: false,
-                        timer: 1500
+                        title: 'Berhasil',
+                        text: 'Data kendaraan berhasil disimpan',
+                        showConfirmButton: true,
+                        confirmButtonText: 'OK',
+                        timer: 2000,
+                        timerProgressBar: true
                     }).then(() => {
-                        vehicleEntryForm.reset();
-                        detectedPlate.classList.add('d-none');
-                        anprResult.className = 'alert alert-info';
-                        anprResult.innerHTML = '<i class="fas fa-info-circle me-2"></i>Menunggu deteksi plat nomor...';
+                        // Reset form
+                        this.reset();
+                        // Stop camera if it's running
+                        if (videoStream) {
+                            stopButton.click();
+                        }
+                        // Update available spaces
                         updateAvailableSpaces();
-                    });
-
-                    // Notify using SignalR if connected
-                    if (connection && connection.state === signalR.HubConnectionState.Connected) {
-                        try {
-                            await connection.invoke("NotifyVehicleEntry", formData.vehicleNumber);
-                        } catch (err) {
-                            console.error('SignalR notification error:', err);
-                        }
-                    }
-                } else {
-                    let errorMessage = 'Gagal menyimpan data kendaraan.';
-                    
-                    if (result && result.error) {
-                        errorMessage = result.error;
-                    } else if (result && result.errors) {
-                        const errorMessages = [];
-                        Object.entries(result.errors).forEach(([field, errors]) => {
-                            const input = document.getElementById(field.toLowerCase());
-                            if (input && errors && errors.length > 0) {
-                                showFieldError(input, errors[0]);
-                                errorMessages.push(errors[0]);
+                        
+                        // Notify using SignalR if connected
+                        if (connection && connection.state === signalR.HubConnectionState.Connected) {
+                            try {
+                                connection.invoke("NotifyVehicleEntry", formData.VehicleNumber);
+                            } catch (err) {
+                                console.error('SignalR notification error:', err);
                             }
-                        });
-                        if (errorMessages.length > 0) {
-                            errorMessage = errorMessages.join('\n');
                         }
-                    }
-                    
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Error!',
-                        text: errorMessage,
-                        confirmButtonText: 'Tutup'
                     });
+                } else {
+                    throw new Error(result.message || 'Gagal menyimpan data kendaraan');
                 }
             } catch (error) {
-                console.error('Error during submission:', error);
+                console.error('Error:', error);
                 Swal.fire({
                     icon: 'error',
-                    title: 'Error!',
-                    text: 'Gagal menyimpan data kendaraan. Silakan coba lagi.',
-                    confirmButtonText: 'Tutup'
+                    title: 'Error',
+                    text: error.message || 'Terjadi kesalahan saat mencatat kendaraan',
+                    confirmButtonText: 'OK'
                 });
             } finally {
+                // Reset button state
+                const submitButton = this.querySelector('button[type="submit"]');
                 submitButton.disabled = false;
                 submitButton.innerHTML = '<i class="fas fa-save me-2"></i>Simpan';
             }
         });
-
-        function showFieldError(input, message) {
-            input.classList.add('is-invalid');
-            const existingFeedback = input.nextElementSibling;
-            if (existingFeedback?.classList.contains('invalid-feedback')) {
-                existingFeedback.remove();
-            }
-            input.insertAdjacentHTML('afterend', `<div class="invalid-feedback">${message}</div>`);
-        }
 
         // Auto-format vehicle number as uppercase and check availability
         vehicleNumberInput.addEventListener('input', (e) => {

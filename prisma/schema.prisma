@@ -4,366 +4,528 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = "postgresql://postgres:postgres@localhost:5432/parkir2"
-}
-
-model ActivityLog {
-  id           String         @id
-  actionType   ActionType
-  userId       String
-  description  String
-  details      Json?
-  ipAddress    String?
-  userAgent    String?
-  createdAt    DateTime       @default(now())
-  User         User           @relation(fields: [userId], references: [id])
-  Notification Notification[]
-}
-
-model Maintenance {
-  id          String            @id
-  type        MaintenanceType
-  title       String
-  description String
-  status      MaintenanceStatus @default(PENDING)
-  priority    Priority          @default(MEDIUM)
-  assignedTo  String?
-  startTime   DateTime?
-  endTime     DateTime?
-  notes       String?
-  attachments Json?
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime
-  User        User?             @relation(fields: [assignedTo], references: [id])
-}
-
-model Notification {
-  id          String           @id
-  type        NotificationType
-  title       String
-  message     String
-  userId      String?
-  activityId  String?
-  read        Boolean          @default(false)
-  data        Json?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime
-  ActivityLog ActivityLog?     @relation(fields: [activityId], references: [id])
-  User        User?            @relation(fields: [userId], references: [id])
-
-  @@index([createdAt])
-  @@index([read])
-  @@index([type])
-}
-
-model ParkingEntry {
-  id           String       @id
-  ticketId     String       @unique
-  vehicleId    String
-  entryTime    DateTime     @default(now())
-  entryImage   String?
-  spotNumber   String?
-  ticketStatus TicketStatus @default(ACTIVE)
-  operatorId   String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime
-  User         User?        @relation(fields: [operatorId], references: [id])
-  Vehicle      Vehicle      @relation(fields: [vehicleId], references: [id])
-  ParkingExit  ParkingExit?
-}
-
-model ParkingExit {
-  id           String       @id
-  entryId      String       @unique
-  vehicleId    String
-  exitTime     DateTime     @default(now())
-  exitImage    String?
-  duration     Int
-  operatorId   String?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime
-  ParkingEntry ParkingEntry @relation(fields: [entryId], references: [id])
-  User         User?        @relation(fields: [operatorId], references: [id])
-  Vehicle      Vehicle      @relation(fields: [vehicleId], references: [id])
-  Payment      Payment?
-}
-
-model ParkingSetting {
-  id          String   @id
-  name        String
-  value       String
-  description String?
-  category    String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime
-
-  @@unique([name, category])
-  @@index([category])
-  @@index([isActive])
-}
-
-model Payment {
-  id            String        @id
-  exitId        String        @unique
-  amount        Float
-  paymentMethod PaymentMethod
-  paymentStatus PaymentStatus @default(PENDING)
-  transactionId String?       @unique
-  operatorId    String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime
-  ParkingExit   ParkingExit   @relation(fields: [exitId], references: [id])
-  User          User?         @relation(fields: [operatorId], references: [id])
-}
-
-model Shift {
-  id        String   @id
-  name      String
-  startTime DateTime
-  endTime   DateTime
-  userId    String
-  notes     String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime
-  User      User     @relation(fields: [userId], references: [id])
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id                  String                @id
-  username            String                @unique
-  password            String
-  name                String
-  role                Role                  @default(OPERATOR)
-  isActive            Boolean               @default(true)
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime
-  ActivityLog         ActivityLog[]
-  Maintenance         Maintenance[]
-  Notification        Notification[]
-  ParkingEntry        ParkingEntry[]
-  ParkingExit         ParkingExit[]
-  Payment             Payment[]
-  Shift               Shift[]
-  member_transactions member_transactions[]
-  tickets             tickets[]
+  Id           Int            @id(map: "PK_User") @default(autoincrement())
+  Username     String         @unique(map: "IX_User_Username")
+  Email        String
+  PasswordHash String
+  FullName     String
+  IsActive     Boolean
+  CreatedAt    DateTime       @db.Timestamp(6)
+  LastLoginAt  DateTime?      @db.Timestamp(6)
+  AccessTokens AccessTokens[]
+  RoleUser     RoleUser[]
 }
 
-model Vehicle {
-  id               String             @id
-  plateNumber      String             @unique
-  type             VehicleType
-  memberStatus     MemberStatus       @default(REGULAR)
-  isActive         Boolean            @default(true)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime
-  ParkingEntry     ParkingEntry[]
-  ParkingExit      ParkingExit[]
-  VehicleMigration VehicleMigration[]
-  parking_spaces   parking_spaces?
+model AccessTokens {
+  Id          Int      @id(map: "PK_AccessTokens") @default(autoincrement())
+  Token       String
+  UserId      String
+  Permissions String
+  CreatedAt   DateTime @db.Timestamp(6)
+  ExpiresAt   DateTime @db.Timestamp(6)
+  IsRevoked   Boolean
+  DeviceId    String
+  IpAddress   String
+  UserAgent   String
+  UserId1     Int
+  User        User     @relation(fields: [UserId1], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AccessTokens_User_UserId1")
+
+  @@index([UserId1], map: "IX_AccessTokens_UserId1")
 }
 
-model VehicleMigration {
-  id         String   @id
-  vehicleId  String
-  oldData    Json
-  newData    Json
-  reason     String
-  migratedAt DateTime @default(now())
-  notes      String?
-  Vehicle    Vehicle  @relation(fields: [vehicleId], references: [id])
+model AspNetRoleClaims {
+  Id          Int         @id(map: "PK_AspNetRoleClaims") @default(autoincrement())
+  RoleId      String
+  ClaimType   String?
+  ClaimValue  String?
+  AspNetRoles AspNetRoles @relation(fields: [RoleId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetRoleClaims_AspNetRoles_RoleId")
+
+  @@index([RoleId], map: "IX_AspNetRoleClaims_RoleId")
 }
 
-model member_transactions {
-  id              Int      @id @default(autoincrement())
-  memberId        Int
-  amount          Float
-  paymentMethod   String
-  transactionDate DateTime @default(now())
-  invoiceNumber   String   @unique
-  status          String   @default("PAID")
-  operatorId      String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime
-  members         members  @relation(fields: [memberId], references: [id])
-  User            User?    @relation(fields: [operatorId], references: [id])
+model AspNetRoles {
+  Id               String             @id(map: "PK_AspNetRoles")
+  Name             String?            @db.VarChar(256)
+  NormalizedName   String?            @unique(map: "RoleNameIndex") @db.VarChar(256)
+  ConcurrencyStamp String?
+  AspNetRoleClaims AspNetRoleClaims[]
+  AspNetUserRoles  AspNetUserRoles[]
 }
 
-model members {
-  id                  Int                   @id @default(autoincrement())
-  plateNumber         String                @unique
-  ownerName           String
-  ownerContact        String?
-  membershipTypeId    Int
-  startDate           DateTime
-  endDate             DateTime
-  isActive            Boolean               @default(true)
-  vehicleType         String
-  notes               String?
-  lastEntryTime       DateTime?
-  lastExitTime        DateTime?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime
-  member_transactions member_transactions[]
-  membership_types    membership_types      @relation(fields: [membershipTypeId], references: [id])
-  tickets             tickets[]
+model AspNetUserClaims {
+  Id          Int         @id(map: "PK_AspNetUserClaims") @default(autoincrement())
+  UserId      String
+  ClaimType   String?
+  ClaimValue  String?
+  AspNetUsers AspNetUsers @relation(fields: [UserId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetUserClaims_AspNetUsers_UserId")
+
+  @@index([UserId], map: "IX_AspNetUserClaims_UserId")
 }
 
-model membership_types {
-  id              Int       @id @default(autoincrement())
-  name            String    @unique
-  description     String?
-  discountPercent Float     @default(0)
-  monthlyFee      Float     @default(0)
-  validityDays    Int       @default(30)
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime
-  members         members[]
+model AspNetUserLogins {
+  LoginProvider       String
+  ProviderKey         String
+  ProviderDisplayName String?
+  UserId              String
+  AspNetUsers         AspNetUsers @relation(fields: [UserId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetUserLogins_AspNetUsers_UserId")
+
+  @@id([LoginProvider, ProviderKey], map: "PK_AspNetUserLogins")
+  @@index([UserId], map: "IX_AspNetUserLogins_UserId")
 }
 
-model parking_history {
-  id         Int       @id @default(autoincrement())
-  vehicleId  String
-  spaceId    Int
-  entryTime  DateTime  @default(now())
-  exitTime   DateTime?
-  operatorId String
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime
+model AspNetUserRoles {
+  UserId      String
+  RoleId      String
+  AspNetRoles AspNetRoles @relation(fields: [RoleId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetUserRoles_AspNetRoles_RoleId")
+  AspNetUsers AspNetUsers @relation(fields: [UserId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetUserRoles_AspNetUsers_UserId")
+
+  @@id([UserId, RoleId], map: "PK_AspNetUserRoles")
+  @@index([RoleId], map: "IX_AspNetUserRoles_RoleId")
 }
 
-model parking_spaces {
-  id        Int                @id @default(autoincrement())
-  number    String             @unique
-  vehicleId String?            @unique
-  createdAt DateTime           @default(now())
-  updatedAt DateTime
-  status    ParkingSpaceStatus @default(AVAILABLE)
-  Vehicle   Vehicle?           @relation(fields: [vehicleId], references: [id])
+model AspNetUserTokens {
+  UserId        String
+  LoginProvider String
+  Name          String
+  Value         String?
+  AspNetUsers   AspNetUsers @relation(fields: [UserId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_AspNetUserTokens_AspNetUsers_UserId")
+
+  @@id([UserId, LoginProvider, Name], map: "PK_AspNetUserTokens")
 }
 
-model settings {
-  id             Int      @id @default(autoincrement())
-  parkingRates   Json
-  operatingHours Json
-  maxCapacity    Int
-  notifications  Json
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime
+model AspNetUsers {
+  Id                   String             @id(map: "PK_AspNetUsers")
+  Name                 String             @db.VarChar(100)
+  Email                String             @db.VarChar(256)
+  PhoneNumber          String?
+  IsActive             Boolean
+  CreatedAt            DateTime           @db.Timestamp(6)
+  LastModifiedAt       DateTime?          @db.Timestamp(6)
+  LastModifiedBy       String?
+  FullName             String
+  BadgeNumber          String?
+  JoinDate             DateTime           @db.Timestamp(6)
+  PhotoPath            String?
+  UserName             String?            @db.VarChar(256)
+  NormalizedUserName   String?            @unique(map: "UserNameIndex") @db.VarChar(256)
+  NormalizedEmail      String?            @db.VarChar(256)
+  EmailConfirmed       Boolean
+  PasswordHash         String?
+  SecurityStamp        String?
+  ConcurrencyStamp     String?
+  PhoneNumberConfirmed Boolean
+  TwoFactorEnabled     Boolean
+  LockoutEnd           DateTime?          @db.Timestamptz(6)
+  LockoutEnabled       Boolean
+  AccessFailedCount    Int
+  AspNetUserClaims     AspNetUserClaims[]
+  AspNetUserLogins     AspNetUserLogins[]
+  AspNetUserRoles      AspNetUserRoles[]
+  AspNetUserTokens     AspNetUserTokens[]
+  Journals             Journals[]
+  OperatorShifts       OperatorShifts[]
+  ParkingTickets       ParkingTickets[]
+
+  @@index([NormalizedEmail], map: "EmailIndex")
 }
 
-model tickets {
-  id            String    @id
-  ticketId      String    @unique
-  plateNumber   String
-  vehicleType   String
-  entryTime     DateTime  @default(now())
-  exitTime      DateTime?
-  memberId      Int?
-  operatorId    String?
-  isProcessed   Boolean   @default(false)
-  isMember      Boolean   @default(false)
-  paymentStatus String?
-  paymentAmount Float?
-  paymentMethod String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime
-  members       members?  @relation(fields: [memberId], references: [id])
-  User          User?     @relation(fields: [operatorId], references: [id])
+model CameraSettings {
+  Id                Int       @id(map: "PK_CameraSettings") @default(autoincrement())
+  ProfileName       String
+  ResolutionWidth   Int
+  ResolutionHeight  Int
+  ROI_X             Int
+  ROI_Y             Int
+  ROI_Width         Int
+  ROI_Height        Int
+  Exposure          Int
+  Gain              Float
+  Brightness        Int
+  Contrast          Int
+  LightingCondition String    @default("Normal")
+  IsActive          Boolean
+  CreatedAt         DateTime  @db.Timestamp(6)
+  ModifiedAt        DateTime? @db.Timestamp(6)
+  Cameras           Cameras[]
 }
 
-enum ActionType {
-  LOGIN
-  LOGOUT
-  CREATE
-  UPDATE
-  DELETE
-  PRINT
-  PAYMENT
-  ENTRY
-  EXIT
-  SETTING
-  MAINTENANCE
-  OTHER
+model Cameras {
+  Id             String         @id(map: "PK_Cameras")
+  Name           String
+  Location       String
+  Type           String
+  Status         String
+  IsActive       Boolean
+  Resolution     String
+  ImageFormat    String
+  FrameRate      Int
+  Configuration  String
+  LastChecked    DateTime       @db.Timestamp(6)
+  LastError      String
+  CreatedBy      String
+  CreatedAt      DateTime       @db.Timestamp(6)
+  LastModifiedBy String
+  LastModifiedAt DateTime       @db.Timestamp(6)
+  DeviceId       Int
+  SettingsId     Int
+  CameraSettings CameraSettings @relation(fields: [SettingsId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_Cameras_CameraSettings_SettingsId")
+  Devices        Devices        @relation(fields: [DeviceId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_Cameras_Devices_DeviceId")
+
+  @@index([DeviceId], map: "IX_Cameras_DeviceId")
+  @@index([SettingsId], map: "IX_Cameras_SettingsId")
 }
 
-enum MaintenanceStatus {
-  PENDING
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
+model DeviceConfigs {
+  Id             Int      @id(map: "PK_DeviceConfigs") @default(autoincrement())
+  Name           String
+  DeviceType     String
+  ConfigKey      String
+  ConfigValue    String
+  Description    String
+  IsActive       Boolean
+  IsBackup       Boolean
+  CreatedAt      DateTime @db.Timestamp(6)
+  CreatedBy      String
+  LastModifiedAt DateTime @db.Timestamp(6)
+  LastModifiedBy String
+  DeviceId       Int
+  Devices        Devices  @relation(fields: [DeviceId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_DeviceConfigs_Devices_DeviceId")
+
+  @@index([DeviceId], map: "IX_DeviceConfigs_DeviceId")
 }
 
-enum MaintenanceType {
-  HARDWARE
-  SOFTWARE
-  NETWORK
-  INFRASTRUCTURE
-  OTHER
+model Devices {
+  Id             Int             @id(map: "PK_Devices") @default(autoincrement())
+  DeviceId       String
+  Token          String
+  Name           String
+  Type           String
+  SerialNumber   String
+  IpAddress      String
+  Port           Int
+  Status         String
+  Location       String
+  ConnectionType String
+  Configuration  String
+  IsActive       Boolean
+  LastChecked    DateTime        @db.Timestamp(6)
+  LastSeen       DateTime        @db.Timestamp(6)
+  LastError      String
+  CreatedBy      String
+  CreatedAt      DateTime        @db.Timestamp(6)
+  LastModifiedBy String
+  LastModifiedAt DateTime        @db.Timestamp(6)
+  Cameras        Cameras[]
+  DeviceConfigs  DeviceConfigs[]
+  LoopDetectors  LoopDetectors[]
 }
 
-enum MemberStatus {
-  REGULAR
-  MEMBER
-  VIP
+model EntryGates {
+  Id               Int       @id(map: "PK_EntryGates") @default(autoincrement())
+  Name             String    @db.VarChar(50)
+  Location         String    @db.VarChar(255)
+  IsActive         Boolean   @default(true)
+  IsOnline         Boolean
+  IsOpen           Boolean
+  LastActivityTime DateTime  @db.Timestamp(6)
+  LastActivity     DateTime? @db.Timestamp(6)
+  IpAddress        String    @db.VarChar(100)
+  PortNumber       Int
+  Description      String
 }
 
-enum NotificationType {
-  INFO
-  SUCCESS
-  WARNING
-  ERROR
+model HardwareStatuses {
+  Id                   Int       @id(map: "PK_HardwareStatuses") @default(autoincrement())
+  DeviceType           String
+  DeviceName           String
+  Status               String
+  LastChecked          DateTime  @db.Timestamp(6)
+  LastError            String?
+  ErrorCount           Int
+  IsOnline             Boolean
+  IsBackupActive       Boolean
+  BackupDeviceName     String?
+  LastBackupSwitch     DateTime? @db.Timestamp(6)
+  IsCameraOnline       Boolean
+  IsGateOnline         Boolean
+  IsPrinterOnline      Boolean
+  IsLoopDetectorOnline Boolean
+  DeviceId             String
 }
 
-enum ParkingSpaceStatus {
-  AVAILABLE
-  OCCUPIED
-  MAINTENANCE
-  RESERVED
+model Journals {
+  Id          Int         @id(map: "PK_Journals") @default(autoincrement())
+  Action      String
+  Description String
+  Timestamp   DateTime    @db.Timestamp(6)
+  OperatorId  String
+  AspNetUsers AspNetUsers @relation(fields: [OperatorId], references: [Id], onUpdate: NoAction, map: "FK_Journals_AspNetUsers_OperatorId")
+
+  @@index([OperatorId], map: "IX_Journals_OperatorId")
 }
 
-enum PaymentMethod {
-  CASH
-  CREDIT_CARD
-  DEBIT_CARD
-  E_WALLET
-  MEMBER
+model LoopDetectors {
+  Id                 String   @id(map: "PK_LoopDetectors")
+  Name               String
+  Location           String
+  Type               String
+  Status             String
+  IsOccupied         Boolean
+  IsActive           Boolean
+  SensitivityLevel   Int
+  DetectionThreshold Int
+  Configuration      String
+  LastChecked        DateTime @db.Timestamp(6)
+  LastError          String
+  CreatedBy          String
+  CreatedAt          DateTime @db.Timestamp(6)
+  LastModifiedBy     String
+  LastModifiedAt     DateTime @db.Timestamp(6)
+  DeviceId           Int
+  Devices            Devices  @relation(fields: [DeviceId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_LoopDetectors_Devices_DeviceId")
+
+  @@index([DeviceId], map: "IX_LoopDetectors_DeviceId")
 }
 
-enum PaymentStatus {
-  PENDING
-  PAID
-  FAILED
-  CANCELLED
-  REFUNDED
+model OperatorShifts {
+  OperatorsId String
+  ShiftsId    Int
+  AspNetUsers AspNetUsers @relation(fields: [OperatorsId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_OperatorShifts_AspNetUsers_OperatorsId")
+  Shifts      Shifts      @relation(fields: [ShiftsId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_OperatorShifts_Shifts_ShiftsId")
+
+  @@id([OperatorsId, ShiftsId], map: "PK_OperatorShifts")
+  @@index([ShiftsId], map: "IX_OperatorShifts_ShiftsId")
 }
 
-enum Priority {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
+model ParkingRateConfigurations {
+  id                          Int                         @id(map: "PK_ParkingRateConfigurations")
+  EffectiveTo                 DateTime?                   @db.Timestamp(6)
+  LastUpdated                 DateTime                    @db.Timestamp(6)
+  ConfigurationName           String
+  Description                 String
+  IsDefault                   Boolean
+  ValidFrom                   DateTime                    @db.Timestamp(6)
+  ValidTo                     DateTime?                   @db.Timestamp(6)
+  AppliedBy                   String
+  AppliedAt                   DateTime                    @db.Timestamp(6)
+  parking_rate_configurations parking_rate_configurations @relation(fields: [id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "FK_ParkingRateConfigurations_parking_rate_configurations_id")
 }
 
-enum Role {
-  ADMIN
-  SUPERVISOR
-  OPERATOR
+model ParkingSpaces {
+  Id                  Int                   @id(map: "PK_ParkingSpaces") @default(autoincrement())
+  SpaceNumber         String
+  SpaceType           String
+  IsOccupied          Boolean
+  IsActive            Boolean
+  LastOccupiedTime    DateTime?             @db.Timestamp(6)
+  HourlyRate          Decimal               @db.Decimal(18, 2)
+  Description         String?
+  CurrentVehicleId    Int?                  @unique(map: "IX_ParkingSpaces_CurrentVehicleId")
+  Vehicles            Vehicles?             @relation(fields: [CurrentVehicleId], references: [Id], onUpdate: NoAction, map: "FK_ParkingSpaces_Vehicles_CurrentVehicleId")
+  ParkingTransactions ParkingTransactions[]
 }
 
-enum TicketStatus {
-  ACTIVE
-  PAID
-  COMPLETED
-  CANCELLED
-  LOST
+model ParkingTickets {
+  Id               String       @id(map: "PK_ParkingTickets")
+  TicketNumber     String
+  BarcodeData      String
+  QRCodeImage      String
+  BarcodeImagePath String?
+  IssueTime        DateTime     @db.Timestamp(6)
+  EntryTime        DateTime     @db.Timestamp(6)
+  ExitTime         DateTime?    @db.Timestamp(6)
+  Amount           Decimal      @db.Decimal
+  ScanTime         DateTime?    @db.Timestamp(6)
+  IsUsed           Boolean
+  VehicleId        Int?
+  OperatorId       String?
+  ShiftId          Int
+  Status           String
+  IssuedAt         DateTime     @db.Timestamp(6)
+  IsValid          Boolean
+  UsedAt           DateTime?    @db.Timestamp(6)
+  LicensePlate     String
+  EntryImagePath   String
+  ExitImagePath    String
+  IsPaid           Boolean
+  CreatedAt        DateTime     @db.Timestamp(6)
+  CreatedBy        String
+  LastModifiedAt   DateTime?    @db.Timestamp(6)
+  LastModifiedBy   String
+  AspNetUsers      AspNetUsers? @relation(fields: [OperatorId], references: [Id], onUpdate: NoAction, map: "FK_ParkingTickets_AspNetUsers_OperatorId")
+  Shifts           Shifts       @relation(fields: [ShiftId], references: [Id], onUpdate: NoAction, map: "FK_ParkingTickets_Shifts_ShiftId")
+  Vehicles         Vehicles?    @relation(fields: [VehicleId], references: [Id], onDelete: Restrict, onUpdate: NoAction, map: "FK_ParkingTickets_Vehicles_VehicleId")
+
+  @@index([OperatorId], map: "IX_ParkingTickets_OperatorId")
+  @@index([ShiftId], map: "IX_ParkingTickets_ShiftId")
+  @@index([VehicleId], map: "IX_ParkingTickets_VehicleId")
 }
 
-enum VehicleType {
-  MOTORCYCLE
-  CAR
-  TRUCK
-  BUS
+model ParkingTransactions {
+  Id                String        @id(map: "PK_ParkingTransactions")
+  TransactionNumber String
+  TicketNumber      String        @unique(map: "IX_ParkingTransactions_TicketNumber")
+  VehicleId         Int
+  ParkingSpaceId    Int
+  EntryTime         DateTime      @db.Timestamp(6)
+  ExitTime          DateTime?     @db.Timestamp(6)
+  HourlyRate        Decimal       @db.Decimal(18, 2)
+  Amount            Decimal       @db.Decimal(18, 2)
+  TotalAmount       Decimal       @db.Decimal(18, 2)
+  PaymentAmount     Decimal       @db.Decimal(18, 2)
+  PaymentStatus     String
+  PaymentMethod     String
+  PaymentTime       DateTime?     @db.Timestamp(6)
+  Status            String
+  OperatorId        String
+  EntryPoint        String
+  VehicleNumber     String
+  VehicleType       String
+  ImagePath         String
+  VehicleImagePath  String
+  IsOfflineEntry    Boolean
+  IsManualEntry     Boolean
+  ParkingSpaces     ParkingSpaces @relation(fields: [ParkingSpaceId], references: [Id], onUpdate: NoAction, map: "FK_ParkingTransactions_ParkingSpaces_ParkingSpaceId")
+  Vehicles          Vehicles      @relation(fields: [VehicleId], references: [Id], onUpdate: NoAction, map: "FK_ParkingTransactions_Vehicles_VehicleId")
+
+  @@index([ParkingSpaceId], map: "IX_ParkingTransactions_ParkingSpaceId")
+  @@index([VehicleId], map: "IX_ParkingTransactions_VehicleId")
+}
+
+model PrinterConfigs {
+  Id             String   @id(map: "PK_PrinterConfigs")
+  Name           String
+  Port           String
+  IsActive       Boolean  @default(true)
+  IpAddress      String
+  TcpPort        Int?
+  ConnectionType String   @default("Serial")
+  Status         String   @default("Offline")
+  LastChecked    DateTime @db.Timestamp(6)
+}
+
+model Role {
+  Id          Int        @id(map: "PK_Role") @default(autoincrement())
+  Name        String     @unique(map: "IX_Role_Name")
+  Description String
+  IsActive    Boolean
+  CreatedAt   DateTime   @db.Timestamp(6)
+  RoleUser    RoleUser[]
+}
+
+model RoleUser {
+  RolesId Int
+  UsersId Int
+  Role    Role @relation(fields: [RolesId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_RoleUser_Role_RolesId")
+  User    User @relation(fields: [UsersId], references: [Id], onDelete: Cascade, onUpdate: NoAction, map: "FK_RoleUser_User_UsersId")
+
+  @@id([RolesId, UsersId], map: "PK_RoleUser")
+  @@index([UsersId], map: "IX_RoleUser_UsersId")
+}
+
+model Shifts {
+  Id             Int              @id(map: "PK_Shifts") @default(autoincrement())
+  Name           String
+  ShiftName      String
+  Date           DateTime         @db.Timestamp(6)
+  StartTime      DateTime         @db.Timestamp(6)
+  EndTime        DateTime         @db.Timestamp(6)
+  Description    String
+  MaxOperators   Int
+  IsActive       Boolean
+  WorkDays       String
+  CreatedAt      DateTime         @db.Timestamp(6)
+  OperatorShifts OperatorShifts[]
+  ParkingTickets ParkingTickets[]
+  Vehicles       Vehicles[]
+}
+
+model SystemLogs {
+  Id            Int      @id(map: "PK_SystemLogs") @default(autoincrement())
+  Timestamp     DateTime @db.Timestamp(6)
+  Level         String
+  Message       String
+  Exception     String?
+  StackTrace    String?
+  Source        String?
+  UserId        String?
+  RequestPath   String?
+  RequestMethod String?
+  UserAgent     String?
+  IpAddress     String?
+}
+
+model Vehicles {
+  Id                  Int                   @id(map: "PK_Vehicles") @default(autoincrement())
+  VehicleNumber       String
+  VehicleType         String
+  TicketNumber        String
+  VehicleTypeId       Int
+  DriverName          String?
+  PhoneNumber         String?
+  ContactNumber       String?
+  EntryTime           DateTime              @db.Timestamp(6)
+  ExitTime            DateTime?             @db.Timestamp(6)
+  IsParked            Boolean
+  EntryImagePath      String?
+  ExitImagePath       String?
+  BarcodeImagePath    String?
+  ParkingSpaceId      Int?
+  ShiftId             Int?
+  CreatedBy           String
+  CreatedAt           DateTime              @db.Timestamp(6)
+  IsActive            Boolean
+  PlateNumber         String
+  Status              String
+  ExternalSystemId    String
+  EntryGateId         String
+  ExitGateId          String
+  ParkingFee          Decimal?              @db.Decimal
+  UpdatedAt           DateTime?             @db.Timestamp(6)
+  ParkingSpaces       ParkingSpaces?
+  ParkingTickets      ParkingTickets[]
+  ParkingTransactions ParkingTransactions[]
+  Shifts              Shifts?               @relation(fields: [ShiftId], references: [Id], onUpdate: NoAction, map: "FK_Vehicles_Shifts_ShiftId")
+
+  @@index([ShiftId], map: "IX_Vehicles_ShiftId")
+}
+
+model parking_rate_configurations {
+  id                        Int                        @id(map: "PK_parking_rate_configurations") @default(autoincrement())
+  vehicle_type              String
+  base_rate                 Decimal                    @db.Decimal
+  hourly_rate               Decimal                    @db.Decimal
+  daily_rate                Decimal                    @db.Decimal
+  weekly_rate               Decimal                    @db.Decimal
+  monthly_rate              Decimal                    @db.Decimal
+  penalty_rate              Decimal                    @db.Decimal
+  effective_from            DateTime                   @db.Timestamp(6)
+  created_by                String
+  created_at                DateTime                   @db.Timestamp(6)
+  last_modified_by          String
+  last_modified_at          DateTime                   @db.Timestamp(6)
+  is_active                 Boolean
+  motorcycle_rate           Decimal                    @db.Decimal
+  car_rate                  Decimal                    @db.Decimal
+  additional_hour_rate      Decimal                    @db.Decimal
+  maximum_daily_rate        Decimal                    @db.Decimal
+  updated_by                String
+  ParkingRateConfigurations ParkingRateConfigurations?
+}
+
+model parking_settings {
+  id                         Int       @id(map: "PK_parking_settings") @default(autoincrement())
+  site_name                  String?
+  logo_path                  String?
+  favicon_path               String?
+  footer_text                String?
+  theme_color                String?
+  show_logo                  Boolean?
+  last_updated               DateTime? @db.Timestamp(6)
+  updated_by                 String?
+  postgres_connection_string String?
 }

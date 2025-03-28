@@ -14,7 +14,6 @@
 - Ubuntu 20.04 LTS or higher / Debian 11 or higher
 - .NET 6.0 SDK and Runtime
 - PostgreSQL 13+
-- Nginx (for production deployment)
 - Git
 
 ## Installation Steps
@@ -26,7 +25,7 @@
 sudo apt update && sudo apt upgrade -y
 
 # Install required dependencies
-sudo apt install -y curl libpng-dev libjpeg-dev libgdiplus nginx
+sudo apt install -y curl libpng-dev libjpeg-dev libgdiplus
 ```
 
 ### 2. Install .NET 6.0 SDK
@@ -86,12 +85,29 @@ Edit `appsettings.json` in the publish directory:
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Database=parkir2;Username=parkir;Password=your_secure_password;",
+    "DefaultConnection": "Host=localhost;Database=parkir2;Username=parkir;Password=your_secure_password;"
+  },
+  "SiteIdentity": {
+    "SiteName": "SISTEM PARKIR",
+    "CompanyName": "RSI BNA",
+    "Address": "JL. Raya Banjarmegara,
+    "Phone": "Nomor Telepon",
+    "Email": "email@perusahaan.com",
+    "Logo": "/images/logo.png",
+    "Currency": "Rp",
+    "TimeZone": "Asia/Jakarta"
   },
   "Hardware": {
     "PrinterName": "your_printer_name",
     "CameraIndex": 0,
     "SerialPort": "/dev/ttyUSB0"
+  },
+  "Kestrel": {
+    "Endpoints": {
+      "Http": {
+        "Url": "http://localhost:5000"
+      }
+    }
   }
 }
 ```
@@ -113,7 +129,7 @@ After=network.target postgresql.service
 
 [Service]
 WorkingDirectory=/opt/parking/publish
-ExecStart=/usr/bin/dotnet /opt/parking/publish/ParkIRC.dll
+ExecStart=/usr/bin/dotnet /opt/parking/publish/ParkIRC.dll --urls="http://0.0.0.0:5000"
 Restart=always
 RestartSec=10
 KillSignal=SIGINT
@@ -125,43 +141,7 @@ Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
 WantedBy=multi-user.target
 ```
 
-### 7. Configure Nginx as Reverse Proxy
-
-Create Nginx configuration:
-
-```bash
-sudo nano /etc/nginx/sites-available/parking
-```
-
-Add the following content:
-
-```nginx
-server {
-    listen 80;
-    server_name your_domain.com;
-
-    location / {
-        proxy_pass http://localhost:5000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection keep-alive;
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Enable the site:
-
-```bash
-sudo ln -s /etc/nginx/sites-available/parking /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
-### 8. Start the Application
+### 7. Start the Application
 
 ```bash
 # Enable and start the service
@@ -170,9 +150,12 @@ sudo systemctl start parking
 
 # Check status
 sudo systemctl status parking
+
+# Test the application
+curl http://localhost:5000
 ```
 
-### 9. Hardware Setup
+### 8. Hardware Setup
 
 #### USB Camera
 ```bash

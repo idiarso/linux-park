@@ -66,6 +66,9 @@ try
     // Add memory cache
     builder.Services.AddMemoryCache();
 
+    // Tambahkan PrismaService
+    builder.Services.AddScoped<PrismaService>();
+
     // Configure services with proper exception handling
     builder.Services.AddScoped<IParkingService, ParkingService>();
     builder.Services.AddScoped<IEmailService, EmailService>();
@@ -336,8 +339,12 @@ try
         name: "default",
         pattern: "{controller=Auth}/{action=Login}/{id?}");
 
-    // Map SignalR hub
-    app.MapHub<ParkingHub>("/parkingHub");
+    // Configure SignalR with increased rate limiting
+    app.MapHub<ParkingHub>("/parkingHub", options => {
+        options.ApplicationMaxBufferSize = 10 * 1024 * 1024; // 10MB
+        options.TransportMaxBufferSize = 10 * 1024 * 1024; // 10MB
+        options.LongPolling.PollTimeout = TimeSpan.FromSeconds(30);
+    });
 
     // Add health checks
     app.MapHealthChecks("/health");

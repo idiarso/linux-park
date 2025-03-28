@@ -282,8 +282,11 @@ namespace ParkIRC.Hubs
                 // Trigger camera to capture vehicle
                 await Clients.All.SendAsync("TriggerCamera", entryPoint);
                 
-                // Automatically print ticket after image is captured
-                // This will be handled by the client listening for TriggerCamera
+                // Open the gate using hardware manager
+                await _hardwareManager.OpenGate(entryPoint);
+                
+                // Notify clients that gate is opening
+                await Clients.All.SendAsync("OpenEntryGate", entryPoint);
             }
             catch (Exception ex)
             {

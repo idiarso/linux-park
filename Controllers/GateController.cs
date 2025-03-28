@@ -9,11 +9,13 @@ using Microsoft.AspNetCore.Authorization;
 using System.IO;
 using Microsoft.AspNetCore.Hosting;
 using QRCoder;
-using System.Drawing;
-using System.Drawing.Imaging;
 using Microsoft.Extensions.Logging;
 using System.Security.Claims;
 using System.Linq;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace ParkIRC.Controllers
 {
@@ -70,9 +72,19 @@ namespace ParkIRC.Controllers
 
                 // Save image if provided
                 string? photoPath = null;
+                bool cameraError = false;
                 if (!string.IsNullOrEmpty(base64Image))
                 {
-                    photoPath = await SaveBase64Image(base64Image, "entry-photos");
+                    try 
+                    {
+                        photoPath = await SaveBase64Image(base64Image, "entry-photos");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error saving entry photo");
+                        cameraError = true;
+                        // Continue without photo
+                    }
                 }
 
                 // Get current shift
@@ -98,8 +110,19 @@ namespace ParkIRC.Controllers
 
                 // Generate barcode
                 string barcodeData = GenerateBarcodeData(vehicle);
-                string barcodeImagePath = await GenerateAndSaveQRCode(barcodeData);
-                vehicle.BarcodeImagePath = barcodeImagePath;
+                string barcodeImagePath;
+                bool barcodeError = false;
+                try
+                {
+                    barcodeImagePath = await GenerateAndSaveQRCode(barcodeData);
+                    vehicle.BarcodeImagePath = barcodeImagePath;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error generating barcode");
+                    barcodeError = true;
+                    barcodeImagePath = string.Empty;
+                }
 
                 // Update parking space
                 parkingSpace.IsOccupied = true;
@@ -136,18 +159,33 @@ namespace ParkIRC.Controllers
                 var ticketNumber = ticket.TicketNumber;
                 var entryTime = DateTime.Now;
 
-                bool printSuccess = await _printerService.PrintTicket(ticketNumber, entryTime.ToString("dd/MM/yyyy HH:mm:ss"));
+                bool printSuccess = false;
+                try
+                {
+                    printSuccess = await _printerService.PrintTicket(ticketNumber, entryTime.ToString("dd/MM/yyyy HH:mm:ss"));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error printing ticket");
+                }
 
                 // Open gate
                 await OpenGateAsync();
 
+                string message = "Kendaraan berhasil diproses";
+                if (cameraError) message += " (Foto tidak tersimpan)";
+                if (barcodeError) message += " (Barcode tidak tersimpan)";
+                if (!printSuccess) message += " (Gagal mencetak tiket)";
+
                 return Json(new { 
                     success = true, 
-                    message = "Kendaraan berhasil diproses" + (!printSuccess ? " (Gagal mencetak tiket)" : ""),
+                    message = message,
                     ticketNumber = ticket.TicketNumber,
                     entryTime = vehicle.EntryTime,
-                    barcodeImageUrl = $"/images/barcodes/{Path.GetFileName(barcodeImagePath)}",
-                    printStatus = printSuccess
+                    barcodeImageUrl = !string.IsNullOrEmpty(barcodeImagePath) ? $"/images/barcodes/{Path.GetFileName(barcodeImagePath)}" : null,
+                    printStatus = printSuccess,
+                    cameraError = cameraError,
+                    barcodeError = barcodeError
                 });
             }
             catch (Exception ex)
@@ -263,37 +301,25 @@ namespace ParkIRC.Controllers
         {
             try
             {
-                if (string.IsNullOrEmpty(base64Image) || !base64Image.Contains(","))
-                {
-                    _logger.LogWarning("Invalid base64 image format");
-                    return string.Empty;
-                }
-
                 var base64Data = base64Image.Split(',')[1];
-                if (string.IsNullOrEmpty(base64Data))
-                {
-                    _logger.LogWarning("Empty base64 image data");
-                    return string.Empty;
-                }
+                var imageBytes = Convert.FromBase64String(base64Data);
 
-                var bytes = Convert.FromBase64String(base64Data);
-                var fileName = $"{DateTime.Now:yyyyMMddHHmmss}_{Guid.NewGuid():N}.jpg";
-                var uploadsFolder = Path.Combine(_webHostEnvironment.WebRootPath, "uploads", folder);
+                using var image = Image.Load<Rgba32>(imageBytes);
                 
-                if (!Directory.Exists(uploadsFolder))
-                {
-                    Directory.CreateDirectory(uploadsFolder);
-                }
+                var uploadDir = Path.Combine(_webHostEnvironment.WebRootPath, "images", folder);
+                Directory.CreateDirectory(uploadDir);
 
-                var filePath = Path.Combine(uploadsFolder, fileName);
-                await System.IO.File.WriteAllBytesAsync(filePath, bytes);
-                
-                return $"/uploads/{folder}/{fileName}";
+                var fileName = $"{DateTime.Now:yyyyMMddHHmmss}.png";
+                var filePath = Path.Combine(uploadDir, fileName);
+
+                await image.SaveAsync(filePath);
+
+                return $"/images/{folder}/{fileName}";
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to save base64 image");
-                return string.Empty;
+                _logger.LogError(ex, "Error saving base64 image");
+                throw;
             }
         }
 
@@ -314,31 +340,25 @@ namespace ParkIRC.Controllers
 
         private async Task<string> GenerateAndSaveQRCode(string data)
         {
-            try
-            {
-                using var qrGenerator = new QRCodeGenerator();
-                using var qrCodeData = qrGenerator.CreateQrCode(data, QRCodeGenerator.ECCLevel.Q);
-                using var qrCode = new BitmapByteQRCode(qrCodeData);
-                var qrCodeBytes = qrCode.GetGraphic(20);
-                
-                var fileName = $"qr_{DateTime.Now:yyyyMMddHHmmss}_{Guid.NewGuid():N}.png";
-                var filePath = Path.Combine(_webHostEnvironment.WebRootPath, "images", "barcodes", fileName);
-                
-                var directoryPath = Path.GetDirectoryName(filePath);
-                if (!string.IsNullOrEmpty(directoryPath) && !Directory.Exists(directoryPath))
-                {
-                    Directory.CreateDirectory(directoryPath);
-                }
+            var qrGenerator = new QRCodeGenerator();
+            var qrCodeData = qrGenerator.CreateQrCode(data, QRCodeGenerator.ECCLevel.Q);
+            var qrCode = new BitmapByteQRCode(qrCodeData);
+            var qrCodeBytes = qrCode.GetGraphic(20);
 
-                await System.IO.File.WriteAllBytesAsync(filePath, qrCodeBytes);
-                
-                return $"/images/barcodes/{fileName}";
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error generating QR code");
-                return string.Empty;
-            }
+            // Convert byte array to ImageSharp Image
+            using var image = Image.Load<Rgba32>(qrCodeBytes);
+            
+            // Ensure directory exists
+            var barcodeDir = Path.Combine(_webHostEnvironment.WebRootPath, "images", "barcodes");
+            Directory.CreateDirectory(barcodeDir);
+
+            // Save the image
+            var fileName = $"barcode_{DateTime.Now:yyyyMMddHHmmss}.png";
+            var filePath = Path.Combine(barcodeDir, fileName);
+            
+            await image.SaveAsync(filePath);
+
+            return $"/images/barcodes/{fileName}";
         }
 
         private string GenerateJournalNumber()

@@ -281,7 +281,7 @@
 @await Html.PartialAsync("_ReportModal", new ParkIRC.ViewModels.ReportViewModel())
 
 @section Scripts {
-    <script src="~/lib/microsoft/signalr/dist/browser/signalr.min.js"></script>
+    <script src="~/lib/signalr/dist/browser/signalr.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // SignalR Connection
@@ -301,10 +301,15 @@
             event.preventDefault();
             
             const formData = new FormData(event.target);
-            const vehicleNumber = formData.get('VehicleNumber');
+            const data = {
+                vehicleNumber: formData.get('VehicleNumber'),
+                vehicleType: formData.get('VehicleType'),
+                driverName: formData.get('DriverName'),
+                phoneNumber: formData.get('PhoneNumber')
+            };
             
             // Validate form
-            if (!vehicleNumber) {
+            if (!data.vehicleNumber) {
                 alert('Nomor kendaraan wajib diisi');
                 return false;
             }
@@ -319,10 +324,11 @@
             fetch('/Parking/VehicleEntry', {
                 method: 'POST',
                 headers: {
+                    'Content-Type': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                     'RequestVerificationToken': getAntiForgeryToken()
                 },
-                body: formData
+                body: JSON.stringify(data)
             })
             .then(response => response.json())
             .then(data => {

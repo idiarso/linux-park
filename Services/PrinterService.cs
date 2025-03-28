@@ -15,6 +15,7 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
+using System.Runtime.InteropServices;
 
 namespace ParkIRC.Services
 {
@@ -54,8 +55,67 @@ namespace ParkIRC.Services
                 WriteTimeout = PRINT_TIMEOUT_MS
             };
 
-            _printerName = string.IsNullOrEmpty(_configuration["PrinterSettings:PrinterName"]) ?
-                PrinterSettings.InstalledPrinters[0] : _configuration["PrinterSettings:PrinterName"];
+            // Get printer name from config, or use default CUPS printer
+            _printerName = _configuration["PrinterSettings:PrinterName"];
+            if (string.IsNullOrEmpty(_printerName))
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    // Try to get default CUPS printer
+                    try
+                    {
+                        var defaultPrinter = GetDefaultCupsPrinter();
+                        _printerName = !string.IsNullOrEmpty(defaultPrinter) ? defaultPrinter : "EPSON-TM-T82";
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to get default CUPS printer. Using fallback name.");
+                        _printerName = "EPSON-TM-T82";
+                    }
+                }
+                else
+                {
+                    _printerName = "EPSON TM-T82";
+                }
+            }
+            _logger.LogInformation("Using printer: {PrinterName}", _printerName);
+        }
+
+        private string GetDefaultCupsPrinter()
+        {
+            try
+            {
+                var process = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "lpstat",
+                        Arguments = "-d",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    }
+                };
+
+                process.Start();
+                string output = process.StandardOutput.ReadToEnd();
+                process.WaitForExit();
+
+                if (process.ExitCode == 0 && !string.IsNullOrEmpty(output))
+                {
+                    // Output format: "system default destination: printername"
+                    var parts = output.Split(':');
+                    if (parts.Length > 1)
+                    {
+                        return parts[1].Trim();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting default CUPS printer");
+            }
+            return string.Empty;
         }
 
         public async Task InitializeAsync()
@@ -165,16 +225,45 @@ namespace ParkIRC.Services
         {
             try
             {
-                // Format ticket data for thermal printer
+                // Format ticket data
                 var printData = FormatTicketForThermalPrinter(data);
                 
-                // Send print command to Arduino
-                await SendCommand("PRINT");
-                await SendCommand(printData);
-                
-                // Wait for print completion acknowledgment
-                var response = await ReadResponse();
-                return response == "OK";
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    // Use lp command for Linux
+                    var tempFile = Path.GetTempFileName();
+                    await File.WriteAllTextAsync(tempFile, printData);
+                    
+                    var process = new System.Diagnostics.Process
+                    {
+                        StartInfo = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "lp",
+                            Arguments = $"-d {_printerName} {tempFile}",
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            CreateNoWindow = true
+                        }
+                    };
+
+                    process.Start();
+                    await process.WaitForExitAsync();
+                    
+                    File.Delete(tempFile);
+                    
+                    return process.ExitCode == 0;
+                }
+                else
+                {
+                    // Send print command to Arduino for other platforms
+                    await SendCommand("PRINT");
+                    await SendCommand(printData);
+                    
+                    // Wait for print completion acknowledgment
+                    var response = await ReadResponse();
+                    return response == "OK";
+                }
             }
             catch (Exception ex)
             {

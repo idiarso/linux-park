@@ -503,3 +503,5 @@ npx prisma db pull
 npx prisma studio
 
 echo "\dt" | psql -U postgres -d parkir2
+
+dotnet build ParkIRC.csproj && dotnet run --project ParkIRC.csproj
