@@ -161,12 +161,18 @@ namespace ParkIRC.Data
 
             builder.Entity<SiteSettings>(entity =>
             {
+                entity.ToTable("parking_settings");
                 entity.HasKey(e => e.Id);
-                entity.Property(e => e.SiteName).IsRequired();
-                entity.Property(e => e.ThemeColor).HasDefaultValue("#007bff");
-                entity.Property(e => e.ShowLogo).HasDefaultValue(true);
-                entity.Property(e => e.LastUpdated).IsRequired();
-                entity.Property(e => e.UpdatedBy).IsRequired();
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.SiteName).HasColumnName("site_name");
+                entity.Property(e => e.LogoPath).HasColumnName("logo_path");
+                entity.Property(e => e.FaviconPath).HasColumnName("favicon_path");
+                entity.Property(e => e.FooterText).HasColumnName("footer_text");
+                entity.Property(e => e.ThemeColor).HasColumnName("theme_color");
+                entity.Property(e => e.ShowLogo).HasColumnName("show_logo");
+                entity.Property(e => e.LastUpdated).HasColumnName("last_updated");
+                entity.Property(e => e.UpdatedBy).HasColumnName("updated_by");
+                entity.Property(e => e.PostgresConnectionString).HasColumnName("postgres_connection_string");
             });
 
             builder.Entity<PrinterConfig>(entity =>

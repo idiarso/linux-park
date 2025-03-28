@@ -498,3 +498,8 @@ taskkill /F /IM ParkIRC.exe
 dotnet run --project ParkIRC.csproj
 
 npx prisma studio
+
+npx prisma db pull
+npx prisma studio
+
+echo "\dt" | psql -U postgres -d parkir2

@@ -67,7 +67,7 @@
 
                                 <div class="form-check mt-3">
                                     <input type="checkbox" class="form-check-input" name="ShowLogo" 
-                                           value="true" @(Model.ShowLogo ? "checked" : "")>
+                                           value="true" @(Model.ShowLogo ?? true ? "checked" : "")>
                                     <label class="form-check-label">Tampilkan Logo</label>
                                 </div>
                             </div>
