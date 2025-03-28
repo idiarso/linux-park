@@ -1,0 +1,369 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://postgres:postgres@localhost:5432/parkir2"
+}
+
+model ActivityLog {
+  id           String         @id
+  actionType   ActionType
+  userId       String
+  description  String
+  details      Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime       @default(now())
+  User         User           @relation(fields: [userId], references: [id])
+  Notification Notification[]
+}
+
+model Maintenance {
+  id          String            @id
+  type        MaintenanceType
+  title       String
+  description String
+  status      MaintenanceStatus @default(PENDING)
+  priority    Priority          @default(MEDIUM)
+  assignedTo  String?
+  startTime   DateTime?
+  endTime     DateTime?
+  notes       String?
+  attachments Json?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime
+  User        User?             @relation(fields: [assignedTo], references: [id])
+}
+
+model Notification {
+  id          String           @id
+  type        NotificationType
+  title       String
+  message     String
+  userId      String?
+  activityId  String?
+  read        Boolean          @default(false)
+  data        Json?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime
+  ActivityLog ActivityLog?     @relation(fields: [activityId], references: [id])
+  User        User?            @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([read])
+  @@index([type])
+}
+
+model ParkingEntry {
+  id           String       @id
+  ticketId     String       @unique
+  vehicleId    String
+  entryTime    DateTime     @default(now())
+  entryImage   String?
+  spotNumber   String?
+  ticketStatus TicketStatus @default(ACTIVE)
+  operatorId   String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime
+  User         User?        @relation(fields: [operatorId], references: [id])
+  Vehicle      Vehicle      @relation(fields: [vehicleId], references: [id])
+  ParkingExit  ParkingExit?
+}
+
+model ParkingExit {
+  id           String       @id
+  entryId      String       @unique
+  vehicleId    String
+  exitTime     DateTime     @default(now())
+  exitImage    String?
+  duration     Int
+  operatorId   String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime
+  ParkingEntry ParkingEntry @relation(fields: [entryId], references: [id])
+  User         User?        @relation(fields: [operatorId], references: [id])
+  Vehicle      Vehicle      @relation(fields: [vehicleId], references: [id])
+  Payment      Payment?
+}
+
+model ParkingSetting {
+  id          String   @id
+  name        String
+  value       String
+  description String?
+  category    String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  @@unique([name, category])
+  @@index([category])
+  @@index([isActive])
+}
+
+model Payment {
+  id            String        @id
+  exitId        String        @unique
+  amount        Float
+  paymentMethod PaymentMethod
+  paymentStatus PaymentStatus @default(PENDING)
+  transactionId String?       @unique
+  operatorId    String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime
+  ParkingExit   ParkingExit   @relation(fields: [exitId], references: [id])
+  User          User?         @relation(fields: [operatorId], references: [id])
+}
+
+model Shift {
+  id        String   @id
+  name      String
+  startTime DateTime
+  endTime   DateTime
+  userId    String
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  User      User     @relation(fields: [userId], references: [id])
+}
+
+model User {
+  id                  String                @id
+  username            String                @unique
+  password            String
+  name                String
+  role                Role                  @default(OPERATOR)
+  isActive            Boolean               @default(true)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  ActivityLog         ActivityLog[]
+  Maintenance         Maintenance[]
+  Notification        Notification[]
+  ParkingEntry        ParkingEntry[]
+  ParkingExit         ParkingExit[]
+  Payment             Payment[]
+  Shift               Shift[]
+  member_transactions member_transactions[]
+  tickets             tickets[]
+}
+
+model Vehicle {
+  id               String             @id
+  plateNumber      String             @unique
+  type             VehicleType
+  memberStatus     MemberStatus       @default(REGULAR)
+  isActive         Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime
+  ParkingEntry     ParkingEntry[]
+  ParkingExit      ParkingExit[]
+  VehicleMigration VehicleMigration[]
+  parking_spaces   parking_spaces?
+}
+
+model VehicleMigration {
+  id         String   @id
+  vehicleId  String
+  oldData    Json
+  newData    Json
+  reason     String
+  migratedAt DateTime @default(now())
+  notes      String?
+  Vehicle    Vehicle  @relation(fields: [vehicleId], references: [id])
+}
+
+model member_transactions {
+  id              Int      @id @default(autoincrement())
+  memberId        Int
+  amount          Float
+  paymentMethod   String
+  transactionDate DateTime @default(now())
+  invoiceNumber   String   @unique
+  status          String   @default("PAID")
+  operatorId      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime
+  members         members  @relation(fields: [memberId], references: [id])
+  User            User?    @relation(fields: [operatorId], references: [id])
+}
+
+model members {
+  id                  Int                   @id @default(autoincrement())
+  plateNumber         String                @unique
+  ownerName           String
+  ownerContact        String?
+  membershipTypeId    Int
+  startDate           DateTime
+  endDate             DateTime
+  isActive            Boolean               @default(true)
+  vehicleType         String
+  notes               String?
+  lastEntryTime       DateTime?
+  lastExitTime        DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime
+  member_transactions member_transactions[]
+  membership_types    membership_types      @relation(fields: [membershipTypeId], references: [id])
+  tickets             tickets[]
+}
+
+model membership_types {
+  id              Int       @id @default(autoincrement())
+  name            String    @unique
+  description     String?
+  discountPercent Float     @default(0)
+  monthlyFee      Float     @default(0)
+  validityDays    Int       @default(30)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime
+  members         members[]
+}
+
+model parking_history {
+  id         Int       @id @default(autoincrement())
+  vehicleId  String
+  spaceId    Int
+  entryTime  DateTime  @default(now())
+  exitTime   DateTime?
+  operatorId String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime
+}
+
+model parking_spaces {
+  id        Int                @id @default(autoincrement())
+  number    String             @unique
+  vehicleId String?            @unique
+  createdAt DateTime           @default(now())
+  updatedAt DateTime
+  status    ParkingSpaceStatus @default(AVAILABLE)
+  Vehicle   Vehicle?           @relation(fields: [vehicleId], references: [id])
+}
+
+model settings {
+  id             Int      @id @default(autoincrement())
+  parkingRates   Json
+  operatingHours Json
+  maxCapacity    Int
+  notifications  Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime
+}
+
+model tickets {
+  id            String    @id
+  ticketId      String    @unique
+  plateNumber   String
+  vehicleType   String
+  entryTime     DateTime  @default(now())
+  exitTime      DateTime?
+  memberId      Int?
+  operatorId    String?
+  isProcessed   Boolean   @default(false)
+  isMember      Boolean   @default(false)
+  paymentStatus String?
+  paymentAmount Float?
+  paymentMethod String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime
+  members       members?  @relation(fields: [memberId], references: [id])
+  User          User?     @relation(fields: [operatorId], references: [id])
+}
+
+enum ActionType {
+  LOGIN
+  LOGOUT
+  CREATE
+  UPDATE
+  DELETE
+  PRINT
+  PAYMENT
+  ENTRY
+  EXIT
+  SETTING
+  MAINTENANCE
+  OTHER
+}
+
+enum MaintenanceStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum MaintenanceType {
+  HARDWARE
+  SOFTWARE
+  NETWORK
+  INFRASTRUCTURE
+  OTHER
+}
+
+enum MemberStatus {
+  REGULAR
+  MEMBER
+  VIP
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum ParkingSpaceStatus {
+  AVAILABLE
+  OCCUPIED
+  MAINTENANCE
+  RESERVED
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  E_WALLET
+  MEMBER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum Role {
+  ADMIN
+  SUPERVISOR
+  OPERATOR
+}
+
+enum TicketStatus {
+  ACTIVE
+  PAID
+  COMPLETED
+  CANCELLED
+  LOST
+}
+
+enum VehicleType {
+  MOTORCYCLE
+  CAR
+  TRUCK
+  BUS
+}

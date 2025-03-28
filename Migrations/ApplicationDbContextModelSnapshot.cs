@@ -228,7 +228,7 @@ namespace ParkIRC.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("CameraSettings");
+                    b.ToTable("CameraSettings", (string)null);
                 });
 
             modelBuilder.Entity("ParkIRC.Models.EntryGate", b =>
@@ -280,7 +280,7 @@ namespace ParkIRC.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("EntryGates");
+                    b.ToTable("EntryGates", (string)null);
                 });
 
             modelBuilder.Entity("ParkIRC.Models.Journal", b =>
@@ -310,7 +310,7 @@ namespace ParkIRC.Migrations
 
                     b.HasIndex("OperatorId");
 
-                    b.ToTable("Journals");
+                    b.ToTable("Journals", (string)null);
                 });
 
             modelBuilder.Entity("ParkIRC.Models.Operator", b =>
@@ -483,7 +483,7 @@ namespace ParkIRC.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("ParkingRateConfigurations");
+                    b.ToTable("ParkingRateConfigurations", (string)null);
                 });
 
             modelBuilder.Entity("ParkIRC.Models.ParkingSpace", b =>
@@ -525,7 +525,7 @@ namespace ParkIRC.Migrations
                     b.HasIndex("CurrentVehicleId")
                         .IsUnique();
 
-                    b.ToTable("ParkingSpaces");
+                    b.ToTable("ParkingSpaces", (string)null);
                 });
 
             modelBuilder.Entity("ParkIRC.Models.ParkingTicket", b =>
@@ -590,7 +590,7 @@ namespace ParkIRC.Migrations
 
                     b.HasIndex("VehicleId");
 
-                    b.ToTable("ParkingTickets");
+                    b.ToTable("ParkingTickets", (string)null);
                 });
 
             modelBuilder.Entity("ParkIRC.Models.ParkingTransaction", b =>
@@ -681,7 +681,7 @@ namespace ParkIRC.Migrations
 
                     b.HasIndex("VehicleId");
 
-                    b.ToTable("ParkingTransactions");
+                    b.ToTable("ParkingTransactions", (string)null);
                 });
 
             modelBuilder.Entity("ParkIRC.Models.PrinterConfig", b =>
@@ -726,7 +726,7 @@ namespace ParkIRC.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("PrinterConfigs");
+                    b.ToTable("PrinterConfigs", (string)null);
                 });
 
             modelBuilder.Entity("ParkIRC.Models.Shift", b =>
@@ -774,7 +774,7 @@ namespace ParkIRC.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Shifts");
+                    b.ToTable("Shifts", (string)null);
                 });
 
             modelBuilder.Entity("ParkIRC.Models.SiteSettings", b =>
@@ -818,7 +818,7 @@ namespace ParkIRC.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("SiteSettings");
+                    b.ToTable("SiteSettings", (string)null);
                 });
 
             modelBuilder.Entity("ParkIRC.Models.Vehicle", b =>
@@ -874,7 +874,7 @@ namespace ParkIRC.Migrations
 
                     b.HasIndex("ShiftId");
 
-                    b.ToTable("Vehicles");
+                    b.ToTable("Vehicles", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

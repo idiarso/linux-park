@@ -494,4 +494,7 @@ PS D:\AAA\Park28Maret-master> # Clean the project
 >> # Build the project
 >> dotnet build ParkIRC.csproj
 
+taskkill /F /IM ParkIRC.exe
 dotnet run --project ParkIRC.csproj
+
+npx prisma studio

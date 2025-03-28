@@ -1,6 +1,32 @@
 {
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.7.2",
-    "@microsoft/signalr": "^8.0.7"
-  }
+    "@microsoft/signalr": "^8.0.7",
+    "@prisma/client": "^6.5.0"
+  },
+  "name": "park28maret-master",
+  "version": "1.0.0",
+  "description": "ParkIRC adalah sistem manajemen parkir modern yang menggabungkan otomatisasi di pintu masuk dan verifikasi operator di pintu keluar untuk pengalaman parkir yang efisien dan aman.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "devDependencies": {
+    "prisma": "^6.5.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idiarsopgl/parkir28Mar.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/idiarsopgl/parkir28Mar/issues"
+  },
+  "homepage": "https://github.com/idiarsopgl/parkir28Mar#readme"
 }
