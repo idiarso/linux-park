@@ -774,24 +774,24 @@ namespace ParkIRC.Controllers
             {
                 _logger.LogInformation("Accessing CameraSettings page");
                 
-                // Check if table exists
-                bool tableExists = await _context.Database.ExecuteSqlRawAsync(
-                    "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='CameraSettings';") > 0;
-                
+                // Check if table exists using PostgreSQL's information_schema
+                var tableExists = await _context.Database
+                    .ExecuteSqlRawAsync("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'camera_settings'") > 0;
+
                 if (!tableExists)
                 {
                     _logger.LogError("CameraSettings table does not exist in the database");
                     return Content("Database error: CameraSettings table does not exist. Please contact administrator.");
                 }
-                
+
                 var cameraSettings = await _context.CameraSettings.ToListAsync();
                 _logger.LogInformation($"Retrieved {cameraSettings.Count} camera settings");
                 return View(cameraSettings);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving camera settings");
-                return Content($"An error occurred: {ex.Message}\n\nStack trace: {ex.StackTrace}");
+                _logger.LogError(ex, "Error accessing camera settings");
+                return Content($"An error occurred: {ex.Message}");
             }
         }
         

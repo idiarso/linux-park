@@ -51,6 +51,18 @@ namespace ParkIRC.Models
         [Display(Name = "Tarif Denda")]
         public new decimal PenaltyRate { get; set; }
 
+        [Display(Name = "Dibuat Pada")]
+        public new DateTime CreatedAt { get; set; }
+
+        [Display(Name = "Dibuat Oleh")]
+        public new string CreatedBy { get; set; } = string.Empty;
+
+        [Display(Name = "Diubah Pada")]
+        public new DateTime? LastModifiedAt { get; set; }
+
+        [Display(Name = "Diubah Oleh")]
+        public new string LastModifiedBy { get; set; } = string.Empty;
+
         [Display(Name = "Status Aktif")]
         public new bool IsActive { get; set; } = true;
 
@@ -60,21 +72,6 @@ namespace ParkIRC.Models
 
         [Display(Name = "Berlaku Sampai")]
         public DateTime? EffectiveTo { get; set; }
-
-        [Required]
-        [Display(Name = "Dibuat Oleh")]
-        public new string CreatedBy { get; set; } = string.Empty;
-
-        [Required]
-        [Display(Name = "Dibuat Pada")]
-        public new DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-
-        [Required]
-        [Display(Name = "Diubah Oleh")]
-        public new string LastModifiedBy { get; set; } = string.Empty;
-
-        [Display(Name = "Diubah Pada")]
-        public new DateTime? LastModifiedAt { get; set; }
 
         // Additional properties referenced in controllers
         [Column(TypeName = "decimal(18,2)")]

@@ -22,6 +22,7 @@ namespace ParkIRC.Data
         public DbSet<Journal> Journals { get; set; } = null!;
         public DbSet<ParkingRate> ParkingRates { get; set; } = null!;
         public DbSet<CameraSettings> CameraSettings { get; set; } = null!;
+        public DbSet<ParkingRateConfiguration> ParkingRateConfigurations { get; set; } = null!;
         public DbSet<EntryGate> EntryGates { get; set; } = null!;
         public DbSet<SiteSettings> SiteSettings { get; set; } = null!;
         public DbSet<PrinterConfig> PrinterConfigs { get; set; } = null!;
@@ -130,17 +131,27 @@ namespace ParkIRC.Data
 
             builder.Entity<ParkingRate>(entity =>
             {
+                entity.ToTable("parking_rate_configurations");
                 entity.HasKey(e => e.Id);
-                entity.Property(e => e.VehicleType).IsRequired();
-                entity.Property(e => e.BaseRate).HasColumnType("decimal(18,2)");
-                entity.Property(e => e.HourlyRate).HasColumnType("decimal(18,2)");
-                entity.Property(e => e.DailyRate).HasColumnType("decimal(18,2)");
-                entity.Property(e => e.WeeklyRate).HasColumnType("decimal(18,2)");
-                entity.Property(e => e.MonthlyRate).HasColumnType("decimal(18,2)");
-                entity.Property(e => e.PenaltyRate).HasColumnType("decimal(18,2)");
-                entity.Property(e => e.EffectiveFrom).IsRequired();
-                entity.Property(e => e.CreatedBy).IsRequired();
-                entity.Property(e => e.LastModifiedBy).IsRequired();
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.VehicleType).HasColumnName("vehicle_type").IsRequired();
+                entity.Property(e => e.BaseRate).HasColumnName("base_rate");
+                entity.Property(e => e.HourlyRate).HasColumnName("hourly_rate");
+                entity.Property(e => e.DailyRate).HasColumnName("daily_rate");
+                entity.Property(e => e.WeeklyRate).HasColumnName("weekly_rate");
+                entity.Property(e => e.MonthlyRate).HasColumnName("monthly_rate");
+                entity.Property(e => e.PenaltyRate).HasColumnName("penalty_rate");
+                entity.Property(e => e.IsActive).HasColumnName("is_active");
+                entity.Property(e => e.EffectiveFrom).HasColumnName("effective_from");
+                entity.Property(e => e.CreatedBy).HasColumnName("created_by");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.LastModifiedBy).HasColumnName("last_modified_by");
+                entity.Property(e => e.LastModifiedAt).HasColumnName("last_modified_at");
+                entity.Property(e => e.MotorcycleRate).HasColumnName("motorcycle_rate");
+                entity.Property(e => e.CarRate).HasColumnName("car_rate");
+                entity.Property(e => e.AdditionalHourRate).HasColumnName("additional_hour_rate");
+                entity.Property(e => e.MaximumDailyRate).HasColumnName("maximum_daily_rate");
+                entity.Property(e => e.UpdatedBy).HasColumnName("updated_by");
             });
 
             builder.Entity<CameraSettings>(entity =>

@@ -255,6 +255,11 @@ try
                 await roleManager.CreateAsync(new IdentityRole("Staff"));
                 logger.Info("Staff role created");
             }
+            if (!await roleManager.RoleExistsAsync("Operator"))
+            {
+                await roleManager.CreateAsync(new IdentityRole("Operator"));
+                logger.Info("Operator role created");
+            }
 
             // Create admin user if it doesn't exist
             var adminEmail = "admin@parkingsystem.com";
@@ -276,6 +281,7 @@ try
                 if (result.Succeeded)
                 {
                     await userManager.AddToRoleAsync(adminUser, "Admin");
+                    await userManager.AddToRoleAsync(adminUser, "Operator");
                     logger.Info("Admin user created successfully");
                 }
                 else

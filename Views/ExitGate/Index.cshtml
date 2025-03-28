@@ -27,21 +27,22 @@
                                     <h5>Arahkan Scanner ke Barcode Tiket</h5>
                                     <p class="text-muted">Sistem akan memproses secara otomatis</p>
                                     
-                                    <!-- Hidden form for manual entry of barcode -->
+                                    <!-- Hidden form for barcode input -->
                                     <form id="barcodeForm" class="mt-4">
-                                        <div class="input-group">
-                                            <input type="text" id="barcodeInput" class="form-control" placeholder="Scan atau masukkan barcode disini" autofocus>
-                                            <button type="submit" class="btn btn-primary">Proses</button>
+                                        <div class="input-group" style="max-width: 400px; margin: 0 auto;">
+                                            <input type="text" id="barcodeInput" class="form-control form-control-lg" 
+                                                   placeholder="Scan barcode disini" autofocus 
+                                                   autocomplete="off" style="text-align: center;">
                                         </div>
                                     </form>
                                 </div>
                             </div>
                         </div>
                         
-                        <!-- Switch to Manual Mode Button -->
+                        <!-- Switch to Manual Mode Button - Made less prominent -->
                         <div class="col-md-12 mb-4 text-center">
-                            <button id="toggleModeBtn" class="btn btn-outline-secondary">
-                                <i class="fas fa-keyboard me-2"></i> Switch ke Input Manual
+                            <button id="toggleModeBtn" class="btn btn-link text-muted">
+                                <i class="fas fa-keyboard me-2"></i> Input Manual
                             </button>
                         </div>
                         
@@ -179,8 +180,54 @@
 @section Scripts {
     <script>
         $(document).ready(function() {
+            // Always focus back to barcode input when clicking anywhere
+            $(document).click(function() {
+                $('#barcodeInput').focus();
+            });
+            
             // Set default focus to barcode input
             $('#barcodeInput').focus();
+            
+            // Clear input after successful scan
+            function clearBarcodeInput() {
+                $('#barcodeInput').val('').focus();
+            }
+            
+            // Process barcode on input
+            $('#barcodeInput').on('input', function() {
+                var barcode = $(this).val();
+                if (barcode.length >= 8) { // Assuming minimum barcode length is 8
+                    processBarcodeInput(barcode);
+                }
+            });
+            
+            function processBarcodeInput(barcode) {
+                showLoading('Memproses barcode...');
+                
+                $.ajax({
+                    type: 'POST',
+                    url: '@Url.Action("ProcessBarcode", "ExitGate")',
+                    data: { barcode: barcode },
+                    success: function(response) {
+                        hideLoading();
+                        if (response.success) {
+                            displayReceipt(response);
+                            clearBarcodeInput();
+                            playSuccessSound();
+                        } else {
+                            showAlert('error', response.message);
+                            clearBarcodeInput();
+                            playErrorSound();
+                        }
+                    },
+                    error: function() {
+                        hideLoading();
+                        showAlert('error', 'Terjadi kesalahan sistem');
+                        clearBarcodeInput();
+                        playErrorSound();
+                    }
+                });
+            }
             
             // Toggle between barcode and manual mode
             $('#toggleModeBtn').click(function() {
@@ -196,22 +243,9 @@
                     // Switch to barcode mode
                     $('#manualInputSection').hide();
                     $('#barcodeScannerSection').show();
-                    $('#toggleModeBtn').html('<i class="fas fa-keyboard me-2"></i> Switch ke Input Manual');
+                    $('#toggleModeBtn').html('<i class="fas fa-keyboard me-2"></i> Input Manual');
                     $('#barcodeInput').focus();
                 }
-            });
-            
-            // Handle barcode submission
-            $('#barcodeForm').submit(function(e) {
-                e.preventDefault();
-                const barcode = $('#barcodeInput').val().trim();
-                
-                if (!barcode) {
-                    showAlert('warning', 'Barcode tidak boleh kosong');
-                    return false;
-                }
-                
-                processBarcode(barcode);
             });
             
             // Handle manual vehicle number search
@@ -241,35 +275,6 @@
             setTimeout(function() {
                 $('#barcodeInput').focus();
             }, 500);
-            
-            // Function to process barcode
-            function processBarcode(barcode) {
-                showLoading('Memproses barcode...');
-                
-                $.ajax({
-                    type: 'POST',
-                    url: '@Url.Action("ProcessBarcode", "ExitGate")',
-                    data: { barcode: barcode },
-                    success: function(response) {
-                        hideLoading();
-                        
-                        if (response.success) {
-                            displayReceipt(response);
-                            addToRecentTransactions(response);
-                            playSuccessSound();
-                        } else {
-                            showAlert('error', response.message);
-                            playErrorSound();
-                            $('#barcodeInput').val('').focus();
-                        }
-                    },
-                    error: function() {
-                        hideLoading();
-                        showAlert('error', 'Terjadi kesalahan sistem');
-                        $('#barcodeInput').val('').focus();
-                    }
-                });
-            }
             
             // Function to find by vehicle number
             function findByVehicleNumber(vehicleNumber) {
@@ -301,7 +306,7 @@
                                 cancelButtonText: 'Batal'
                             }).then((result) => {
                                 if (result.isConfirmed) {
-                                    processBarcode(response.ticketNumber);
+                                    processBarcodeInput(response.ticketNumber);
                                 }
                             });
                         } else {
