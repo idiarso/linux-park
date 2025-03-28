@@ -67,7 +67,7 @@
 <body class="geex-dashboard top-menu-only" data-nav="top">
     <!-- Header Toggle Button -->
     <button class="header-toggle" id="headerToggle" title="Toggle Header">
-        <i class="fas fa-chevron-up"></i>
+        <i class="fas fa-chevron-down"></i>
     </button>
 
     <header class="geex-header" id="mainHeader">
@@ -75,10 +75,10 @@
             <div class="geex-header__logo-wrapper">
                 @if (siteSettings?.ShowLogo == true && !string.IsNullOrEmpty(siteSettings.LogoPath))
                 {
-                    <img src="@siteSettings.LogoPath" style="height: 40px; margin-right: 10px;" />
+                    <img src="@siteSettings.LogoPath" style="height: 32px; margin-right: 8px;" />
                 }
                 <a href="@Url.Action("Dashboard","Parking")" class="geex-header__logo">
-                    <span class="ms-3 fw-bold d-none d-md-inline">@(siteSettings?.SiteName ?? "ParkIRC")</span>
+                    <span class="ms-2 fw-bold d-none d-md-inline" style="font-size: 0.95rem;">@(siteSettings?.SiteName ?? "ParkIRC")</span>
                 </a>
             </div>
             
@@ -92,23 +92,23 @@
                     <!-- Dashboard -->
                     <li class="geex-header__menu__item has-children">
                         <a href="#" class="geex-header__menu__link">
-                            <i class="fas fa-tachometer-alt"></i>
+                            <i class="fas fa-tachometer-alt fa-sm"></i>
                             <span>Dashboard</span>
                         </a>
                         <ul class="geex-header__submenu">
                             <li class="geex-header__menu__item">
                                 <a href="@Url.Action("Dashboard","Parking")" class="geex-header__menu__link">
-                                    <i class="fas fa-chart-line"></i> Dashboard Utama
+                                    <i class="fas fa-chart-line fa-sm"></i> Dashboard Utama
                                 </a>
                             </li>
                             <li class="geex-header__menu__item">
                                 <a href="@Url.Action("LiveDashboard","Parking")" class="geex-header__menu__link">
-                                    <i class="fas fa-video"></i> Live Dashboard
+                                    <i class="fas fa-video fa-sm"></i> Live Dashboard
                                 </a>
                             </li>
                             <li class="geex-header__menu__item">
                                 <a href="@Url.Action("QuickAccess","Parking")" class="geex-header__menu__link">
-                                    <i class="fas fa-bolt"></i> Menu Cepat
+                                    <i class="fas fa-bolt fa-sm"></i> Menu Cepat
                                 </a>
                             </li>
                         </ul>
@@ -117,7 +117,7 @@
                     <!-- Menu Cepat -->
                     <li class="geex-header__menu__item">
                         <a href="@Url.Action("QuickAccess","Parking")" class="geex-header__menu__link">
-                            <i class="fas fa-th-large"></i>
+                            <i class="fas fa-th-large fa-sm"></i>
                             <span>Menu Cepat</span>
                         </a>
                     </li>
@@ -125,23 +125,23 @@
                     <!-- Kendaraan -->
                     <li class="geex-header__menu__item has-children">
                         <a href="#" class="geex-header__menu__link">
-                            <i class="fas fa-car"></i>
+                            <i class="fas fa-car fa-sm"></i>
                             <span>Kendaraan</span>
                         </a>
                         <ul class="geex-header__submenu">
                             <li class="geex-header__menu__item">
                                 <a href="@Url.Action("Entry","Gate")" class="geex-header__menu__link">
-                                    <i class="fas fa-sign-in-alt"></i> Kendaraan Masuk
+                                    <i class="fas fa-sign-in-alt fa-sm"></i> Kendaraan Masuk
                                 </a>
                             </li>
                             <li class="geex-header__menu__item">
                                 <a href="@Url.Action("VehicleExit","Parking")" class="geex-header__menu__link">
-                                    <i class="fas fa-sign-out-alt"></i> Kendaraan Keluar
+                                    <i class="fas fa-sign-out-alt fa-sm"></i> Kendaraan Keluar
                                 </a>
                             </li>
                             <li class="geex-header__menu__item">
                                 <a href="@Url.Action("Index","History")" class="geex-header__menu__link">
-                                    <i class="fas fa-history"></i> Riwayat
+                                    <i class="fas fa-history fa-sm"></i> Riwayat
                                 </a>
                             </li>
                         </ul>
@@ -150,72 +150,82 @@
                     <!-- Laporan -->
                     <li class="geex-header__menu__item has-children">
                         <a href="#" class="geex-header__menu__link">
-                            <i class="fas fa-chart-bar"></i>
+                            <i class="fas fa-chart-bar fa-sm"></i>
                             <span>Laporan & Analisis</span>
                         </a>
                         <ul class="geex-header__submenu">
                             <li class="geex-header__menu__item">
                                 <a href="@Url.Action("Index","Reporting")" class="geex-header__menu__link">
-                                    <i class="fas fa-file-alt"></i> Laporan
+                                    <i class="fas fa-file-alt fa-sm"></i> Laporan
                                 </a>
                             </li>
                             <li class="geex-header__menu__item">
                                 <a href="@Url.Action("PeakHourAnalysis","Reporting")" class="geex-header__menu__link">
-                                    <i class="fas fa-chart-line"></i> Analisis
+                                    <i class="fas fa-chart-line fa-sm"></i> Analisis
                                 </a>
                             </li>
                         </ul>
                     </li>
 
-                    <!-- Kelola - Solo visible para administradores -->
+                    <!-- Kelola - Admin only -->
                     @if (IsAdmin)
                     {
                         <li class="geex-header__menu__item has-children">
                             <a href="#" class="geex-header__menu__link">
-                                <i class="fas fa-cogs"></i>
+                                <i class="fas fa-cogs fa-sm"></i>
                                 <span>Administrasi</span>
                             </a>
                             <ul class="geex-header__submenu">
                                 <li class="geex-header__menu__item">
                                     <a href="@Url.Action("ParkingSlots","Management")" class="geex-header__menu__link">
-                                        <i class="fas fa-th"></i> Kelola Slot
+                                        <i class="fas fa-th fa-sm"></i> Kelola Slot
                                     </a>
                                 </li>
                                 <li class="geex-header__menu__item">
                                     <a href="@Url.Action("Operators","Management")" class="geex-header__menu__link">
-                                        <i class="fas fa-users"></i> Kelola Operator
+                                        <i class="fas fa-users fa-sm"></i> Kelola Operator
                                     </a>
                                 </li>
                                 <li class="geex-header__menu__item">
                                     <a href="@Url.Action("Shifts","Management")" class="geex-header__menu__link">
-                                        <i class="fas fa-clock"></i> Kelola Shift
+                                        <i class="fas fa-clock fa-sm"></i> Kelola Shift
                                     </a>
                                 </li>
                                 <li class="geex-header__menu__item">
                                     <a href="@Url.Action("CameraSettings","Management")" class="geex-header__menu__link">
-                                        <i class="fas fa-camera"></i> Pengaturan Kamera
+                                        <i class="fas fa-camera fa-sm"></i> Pengaturan Kamera
                                     </a>
                                 </li>
                                 <li class="geex-header__menu__item">
                                     <a href="@Url.Action("Index","Rates")" class="geex-header__menu__link">
-                                        <i class="fas fa-money-bill-wave"></i> Tarif Parkir
+                                        <i class="fas fa-money-bill-wave fa-sm"></i> Tarif Parkir
                                     </a>
                                 </li>
                             </ul>
                         </li>
                     }
 
-                    <!-- Exit Gate Menu Item -->
-                    <li class="geex-header__menu__item">
-                        <a href="@Url.Action("Index", "ExitGate")" class="geex-header__menu__link">
-                            <i class="fas fa-sign-out-alt me-2"></i> Pintu Keluar
+                    <!-- Entry/Exit Gate Items - Compact on desktop -->
+                    <li class="geex-header__menu__item d-none d-md-block">
+                        <a href="@Url.Action("Index", "EntryGate")" class="geex-header__menu__link">
+                            <i class="fas fa-door-open fa-sm"></i> <span class="d-none d-xl-inline">Pintu Masuk</span>
                         </a>
                     </li>
-
-                    <!-- Entry Gate Menu Item -->
-                    <li class="geex-header__menu__item">
+                    <li class="geex-header__menu__item d-none d-md-block">
+                        <a href="@Url.Action("Index", "ExitGate")" class="geex-header__menu__link">
+                            <i class="fas fa-sign-out-alt fa-sm"></i> <span class="d-none d-xl-inline">Pintu Keluar</span>
+                        </a>
+                    </li>
+                    
+                    <!-- Entry/Exit Gates for mobile -->
+                    <li class="geex-header__menu__item d-md-none">
                         <a href="@Url.Action("Index", "EntryGate")" class="geex-header__menu__link">
-                            <i class="fas fa-door-open me-2"></i> Pintu Masuk
+                            <i class="fas fa-door-open fa-sm"></i> Pintu Masuk
+                        </a>
+                    </li>
+                    <li class="geex-header__menu__item d-md-none">
+                        <a href="@Url.Action("Index", "ExitGate")" class="geex-header__menu__link">
+                            <i class="fas fa-sign-out-alt fa-sm"></i> Pintu Keluar
                         </a>
                     </li>
                 </ul>
@@ -225,15 +235,15 @@
             <div class="geex-header__right-side ms-auto">
                 <div class="geex-header__user-profile dropdown">
                     <a href="#" class="dropdown-toggle geex-header__menu__link" data-bs-toggle="dropdown">
-                        <i class="fas fa-user-circle"></i>
-                        <span class="d-none d-md-inline">
+                        <i class="fas fa-user-circle fa-sm"></i>
+                        <span class="d-none d-md-inline" style="font-size: 0.9rem;">
                             @if (User.Identity?.IsAuthenticated == true)
                             {
                                 var currentUser = await UserManager.GetUserAsync(User);
                                 if (currentUser != null)
                                 {
                                     @currentUser.FullName
-                                    <span class="badge bg-@(IsAdmin ? "primary" : "info") ms-1">@(IsAdmin ? "Admin" : "Staff")</span>
+                                    <span class="badge bg-@(IsAdmin ? "primary" : "info") ms-1" style="font-size: 0.7rem;">@(IsAdmin ? "Admin" : "Staff")</span>
                                 }
                                 else
                                 {
@@ -245,12 +255,12 @@
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li>
                             <a class="dropdown-item" href="@Url.Action("Profile","Auth")">
-                                <i class="fas fa-user me-2"></i> Profil
+                                <i class="fas fa-user fa-sm me-2"></i> Profil
                             </a>
                         </li>
                         <li>
                             <a class="dropdown-item" href="@Url.Action("ChangePassword","Auth")">
-                                <i class="fas fa-key me-2"></i> Ganti Password
+                                <i class="fas fa-key fa-sm me-2"></i> Ganti Password
                             </a>
                         </li>
                         <li><hr class="dropdown-divider"></li>
@@ -258,7 +268,7 @@
                             <form action="@Url.Action("Logout", "Auth")" method="post">
                                 @Html.AntiForgeryToken()
                                 <button type="submit" class="dropdown-item text-danger">
-                                    <i class="fas fa-sign-out-alt me-2"></i> Keluar
+                                    <i class="fas fa-sign-out-alt fa-sm me-2"></i> Keluar
                                 </button>
                             </form>
                         </li>

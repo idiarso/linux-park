@@ -32,6 +32,14 @@ CSS INDEX
   }
 }
 
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  font-size: 14px; /* Smaller base font size */
+  line-height: 1.5;
+  color: #333;
+  background-color: #f8f9fa;
+}
+
 .geex-header {
   display: none;
   padding: 20px 0 30px;
@@ -2384,12 +2392,6 @@ blockquote span:before {
 
 @media only screen and (max-width: 1440px) {
   .geex-content__header__searchform input {
-    padding: 15px 50px 15px 25px;
-  }
-}
-
-@media only screen and (max-width: 1365px) {
-  .geex-content__header__searchform input {
     padding: 15px 40px 15px 20px;
   }
 }
@@ -3978,10 +3980,6 @@ blockquote span:before {
 
 .geex-content__todo__sidebar__tab .nav-item .nav-link.active svg path, .geex-content__todo__sidebar__tab .nav-item .nav-link:hover svg path {
   fill: var(--primary-color);
-}
-
-.geex-content__todo__sidebar__tab .nav-item .nav-link.primary i {
-  color: var(--primary-color);
 }
 
 .geex-content__todo__sidebar__tab .nav-item .nav-link.primary.active, .geex-content__todo__sidebar__tab .nav-item .nav-link.primary:hover {
