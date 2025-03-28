@@ -10,6 +10,7 @@ using ParkIRC.Services;
 using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
+using ParkIRC.Hardware;
 
 namespace ParkIRC.Hubs
 {

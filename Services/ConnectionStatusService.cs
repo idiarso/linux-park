@@ -32,22 +32,19 @@ namespace ParkIRC.Services
         private bool _disposed;
         private readonly SemaphoreSlim _statusLock = new(1, 1);
         private readonly int _checkInterval;
-        private readonly ApplicationDbContext _dbContext;
 
         public ConnectionStatusService(
             ILogger<ConnectionStatusService> logger,
             IHubContext<ParkingHub> hubContext,
             IServiceScopeFactory scopeFactory,
             IConfiguration configuration,
-            PrintService printService,
-            ApplicationDbContext dbContext)
+            PrintService printService)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _printService = printService ?? throw new ArgumentNullException(nameof(printService));
-            _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             
             _checkInterval = _configuration.GetValue<int>("Monitoring:CheckInterval", 60);
             _isRunning = false;
@@ -139,7 +136,9 @@ namespace ParkIRC.Services
         {
             try
             {
-                return await _dbContext.Database.CanConnectAsync();
+                using var scope = _scopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                return await dbContext.Database.CanConnectAsync();
             }
             catch (Exception ex)
             {

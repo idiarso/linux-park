@@ -71,8 +71,9 @@ try
     builder.Services.AddScoped<IEmailService, EmailService>();
     builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
     builder.Services.AddScoped<IScannerService, ScannerService>();
-    builder.Services.AddScoped<ConnectionStatusService>();
+    builder.Services.AddScoped<ICameraService, CameraService>();
     builder.Services.AddScoped<IOfflineDataService, OfflineDataService>();
+    builder.Services.AddScoped<VehicleIntegrationService>();
     builder.Services.AddIdentity<Operator, IdentityRole>(options => {
         // Password settings
         options.Password.RequireDigit = true;
@@ -121,20 +122,20 @@ try
         return new PrinterService(logger, config, scopeFactory);
     });
 
-    // Add HardwareManager as singleton service with configuration
-    builder.Services.AddSingleton<IHardwareManager>(sp =>
+    // Add HardwareRedundancyService first
+    builder.Services.AddSingleton<ParkIRC.Services.IHardwareRedundancyService, ParkIRC.Services.HardwareRedundancyService>();
+
+    // Register HardwareManager as a singleton with factory method
+    builder.Services.AddSingleton<ParkIRC.Hardware.IHardwareManager>(serviceProvider =>
     {
-        var logger = sp.GetRequiredService<ILogger<ParkIRC.Hardware.HardwareManager>>();
-        var config = sp.GetRequiredService<IConfiguration>();
-        var redundancyService = sp.GetRequiredService<IHardwareRedundancyService>();
+        var logger = serviceProvider.GetRequiredService<ILogger<ParkIRC.Hardware.HardwareManager>>();
+        var config = serviceProvider.GetRequiredService<IConfiguration>();
+        var redundancyService = serviceProvider.GetRequiredService<ParkIRC.Services.IHardwareRedundancyService>();
         
-        ParkIRC.Hardware.HardwareManager.Initialize(logger, config, redundancyService);
-        return (IHardwareManager)ParkIRC.Hardware.HardwareManager.Instance;
+        ParkIRC.Hardware.IHardwareManager hardwareManager = new ParkIRC.Hardware.HardwareManager(logger, config, redundancyService);
+        return hardwareManager;
     });
 
-    // Add HardwareRedundancyService
-    builder.Services.AddSingleton<IHardwareRedundancyService, HardwareRedundancyService>();
-    
     // Add background service untuk cek koneksi
     builder.Services.AddHostedService<ConnectionMonitorService>();
 

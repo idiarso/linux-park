@@ -35,8 +35,8 @@ namespace ParkIRC.Controllers
         private readonly PrintService _printService;
         private readonly IWebHostEnvironment _webHostEnvironment;
         private readonly IConfiguration _configuration;
-        private readonly IRedundancyService _redundancyService;
-        private readonly IHardwareManager _hardwareManager;
+        private readonly ParkIRC.Services.IHardwareRedundancyService _redundancyService;
+        private readonly ParkIRC.Hardware.IHardwareManager _hardwareManager;
 
         public ParkingController(
             ApplicationDbContext context,
@@ -46,8 +46,8 @@ namespace ParkIRC.Controllers
             PrintService printService,
             IWebHostEnvironment webHostEnvironment,
             IConfiguration configuration,
-            IRedundancyService redundancyService,
-            IHardwareManager hardwareManager)
+            ParkIRC.Services.IHardwareRedundancyService redundancyService,
+            ParkIRC.Hardware.IHardwareManager hardwareManager)
         {
             _context = context;
             _logger = logger;

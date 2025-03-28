@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 
 namespace ParkIRC.Services
@@ -12,5 +13,6 @@ namespace ParkIRC.Services
         ValueTask DisposeAsync();
         Task<bool> PrintTicket(string ticketNumber, string entryTime);
         Task<bool> PrintReceipt(string ticketNumber, string exitTime, decimal amount);
+        Task<bool> PrintTicketWithBarcode(string ticketNumber, DateTime entryTime, string barcodeImagePath);
     }
 } 

@@ -482,3 +482,14 @@ Project Link: [https://github.com/idiarsopgl/parkir28Mar](https://github.com/idi
 - Mobile app integration
 - Member management
 - Advanced reporting
+
+
+
+PS D:\AAA\Park28Maret-master> # Clean the project
+>> dotnet clean ParkIRC.csproj
+>>
+>> # Restore dependencies
+>> dotnet restore ParkIRC.csproj
+>>
+>> # Build the project
+>> dotnet build ParkIRC.csproj

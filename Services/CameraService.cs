@@ -22,6 +22,7 @@ namespace ParkIRC.Services
         Task<bool> UpdateSettingsAsync(CameraSettings settings);
         Task<bool> TestConnectionAsync();
         bool IsConnected();
+        Task<byte[]> CaptureImage();
     }
 
     public class CameraService : ICameraService, IAsyncDisposable
@@ -266,6 +267,88 @@ namespace ParkIRC.Services
             {
                 _logger.LogError(ex, "Failed to test camera connection");
                 return false;
+            }
+        }
+
+        public async Task<byte[]> CaptureImage()
+        {
+            if (_videoCapture == null && _cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Video capture device is not initialized");
+            }
+
+            // Use SemaphoreSlim to prevent multiple simultaneous captures
+            await _captureLock.WaitAsync();
+            try
+            {
+                _logger.LogInformation("Capturing image as byte array...");
+                
+                if (_cameraType.Equals("Webcam", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_videoCapture == null)
+                    {
+                        throw new InvalidOperationException("Video capture device is not initialized");
+                    }
+
+                    using var frame = _videoCapture.QueryFrame();
+                    if (frame == null)
+                    {
+                        throw new InvalidOperationException("Failed to capture frame from camera");
+                    }
+
+                    using var ms = new MemoryStream();
+                    using var bitmap = new Bitmap(frame.Width, frame.Height, PixelFormat.Format24bppRgb);
+                    
+                    // Lock bits to directly access bitmap data
+                    var bitmapData = bitmap.LockBits(
+                        new Rectangle(0, 0, frame.Width, frame.Height),
+                        ImageLockMode.WriteOnly,
+                        PixelFormat.Format24bppRgb);
+                    
+                    try
+                    {
+                        // Calculate the size of the data
+                        int dataSize = frame.Width * frame.Height * frame.NumberOfChannels;
+                        
+                        // Create a byte array to hold the image data
+                        byte[] imageData = new byte[dataSize];
+                        
+                        // Copy data from Mat to byte array
+                        System.Runtime.InteropServices.Marshal.Copy(
+                            frame.DataPointer, 
+                            imageData, 
+                            0, 
+                            dataSize);
+                        
+                        // Copy byte array to bitmap
+                        System.Runtime.InteropServices.Marshal.Copy(
+                            imageData, 
+                            0, 
+                            bitmapData.Scan0, 
+                            dataSize);
+                    }
+                    finally
+                    {
+                        // Unlock the bitmap bits
+                        bitmap.UnlockBits(bitmapData);
+                    }
+                    
+                    bitmap.Save(ms, ImageFormat.Jpeg);
+                    return ms.ToArray();
+                }
+                else
+                {
+                    throw new NotImplementedException("IP camera capture not implemented");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to capture image as byte array");
+                throw;
+            }
+            finally
+            {
+                _captureLock.Release();
             }
         }
     }
