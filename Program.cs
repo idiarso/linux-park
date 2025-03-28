@@ -72,6 +72,10 @@ try
     builder.Services.AddScoped<IEmailTemplateService, EmailTemplateService>();
     builder.Services.AddScoped<IScannerService, ScannerService>();
     builder.Services.AddScoped<ICameraService, CameraService>();
+    builder.Services.AddScoped<CameraService>();
+    builder.Services.AddScoped<StorageService>();
+    builder.Services.AddScoped<TicketService>();
+    builder.Services.AddScoped<PrinterService>();
     builder.Services.AddScoped<IOfflineDataService, OfflineDataService>();
     builder.Services.AddScoped<VehicleIntegrationService>();
     builder.Services.AddIdentity<Operator, IdentityRole>(options => {
@@ -141,6 +145,7 @@ try
 
     // Add Connection Status Service as hosted service
     builder.Services.AddHostedService<ConnectionStatusService>();
+    builder.Services.AddScoped<ConnectionStatusService>();
 
     // Add Print Service as singleton
     builder.Services.AddSingleton<PrintService>();
