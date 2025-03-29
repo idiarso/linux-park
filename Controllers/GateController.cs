@@ -572,7 +572,7 @@ namespace ParkIRC.Controllers
                 var availableSpaces = await _context.ParkingSpaces
                     .FromSqlRaw(@"SELECT ""Id"", ""SpaceNumber"", ""SpaceType"", ""IsOccupied"", ""HourlyRate"", 
                         ""CurrentVehicleId"", '' AS ""Location"", '' AS ""ReservedFor"", ""LastOccupiedTime"", 
-                        false AS ""IsReserved"" 
+                        false AS ""IsReserved"", ""IsActive""
                         FROM ""ParkingSpaces"" 
                         WHERE NOT ""IsOccupied"" AND ""SpaceType"" = {0}
                         ORDER BY ""LastOccupiedTime"" 

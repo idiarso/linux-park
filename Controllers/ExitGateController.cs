@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using System.Text;
 
 namespace ParkIRC.Controllers
 {
@@ -135,6 +136,53 @@ namespace ParkIRC.Controllers
         private string FormatDuration(TimeSpan duration)
         {
             return $"{(int)duration.TotalHours} jam {duration.Minutes} menit";
+        }
+
+        // Method to print receipt
+        [HttpPost]
+        public async Task<IActionResult> PrintReceipt(string ticketNumber, string vehicleNumber, string entryTime, 
+                                                    string exitTime, string duration, decimal amount)
+        {
+            try
+            {
+                _logger.LogInformation("Printing receipt for vehicle {VehicleNumber}, ticket {TicketNumber}", vehicleNumber, ticketNumber);
+                
+                // Create receipt content
+                var content = new StringBuilder();
+                content.AppendLine("STRUK PARKIR - KELUAR");
+                content.AppendLine("===================");
+                content.AppendLine();
+                content.AppendLine($"No. Tiket    : {ticketNumber}");
+                content.AppendLine($"No. Kendaraan: {vehicleNumber}");
+                content.AppendLine();
+                content.AppendLine($"Waktu Masuk : {entryTime}");
+                content.AppendLine($"Waktu Keluar: {exitTime}");
+                content.AppendLine($"Durasi      : {duration}");
+                content.AppendLine();
+                content.AppendLine($"Total Biaya : Rp {amount:N0}");
+                content.AppendLine();
+                content.AppendLine("===================");
+                content.AppendLine("Terima Kasih");
+                content.AppendLine();
+                content.AppendLine();
+                content.AppendLine();
+
+                // Send to printer
+                bool printSuccess = _printService.PrintTicket(content.ToString());
+                
+                if (!printSuccess)
+                {
+                    _logger.LogWarning("Failed to print receipt for vehicle {VehicleNumber}", vehicleNumber);
+                    return Json(new { success = false, message = "Gagal mencetak struk. Cek printer Anda." });
+                }
+                
+                return Json(new { success = true, message = "Struk berhasil dicetak" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error printing receipt for vehicle {VehicleNumber}", vehicleNumber);
+                return Json(new { success = false, message = "Terjadi kesalahan sistem" });
+            }
         }
     }
 } 

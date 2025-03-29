@@ -300,9 +300,14 @@
 </div>
 
 <!-- Include Vehicle Modal templates -->
-<partial name="_VehicleEntryModal" />
-<partial name="_VehicleExitModal" />
-<partial name="_HistoryModal" />
+@{
+    var vehicleEntryModel = new ParkIRC.ViewModels.VehicleEntryViewModel();
+    var vehicleExitModel = new ParkIRC.ViewModels.VehicleExitViewModel();
+    var historyModel = new ParkIRC.ViewModels.HistoryViewModel();
+}
+<partial name="_VehicleEntryModal" model="vehicleEntryModel" />
+<partial name="_VehicleExitModal" model="vehicleExitModel" />
+<partial name="_HistoryModal" model="historyModel" />
 
 <!-- Report Modal -->
 <div class="modal fade" id="reportModal" tabindex="-1" aria-labelledby="reportModalLabel" aria-hidden="true">

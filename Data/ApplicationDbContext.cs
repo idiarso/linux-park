@@ -35,6 +35,8 @@ namespace ParkIRC.Data
         public DbSet<DeviceConfig> DeviceConfigs { get; set; }
         public DbSet<LoopDetector> LoopDetectors { get; set; }
         public DbSet<Camera> Cameras { get; set; }
+        public DbSet<GateEvent> GateEvents { get; set; }
+        public DbSet<PendingVehicleEntry> PendingVehicleEntries { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -226,6 +228,30 @@ namespace ParkIRC.Data
             builder.Entity<Role>()
                 .HasIndex(r => r.Name)
                 .IsUnique();
+
+            builder.Entity<GateEvent>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.EventType).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.EventTime).IsRequired();
+                entity.Property(e => e.EventData).HasColumnType("text");
+                entity.Property(e => e.IsProcessed).IsRequired();
+                entity.Property(e => e.ProcessedTime);
+                entity.Property(e => e.ProcessedBy).HasMaxLength(100);
+            });
+
+            builder.Entity<PendingVehicleEntry>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.TicketNumber).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.CreatedAt).IsRequired();
+                entity.Property(e => e.ExpiresAt).IsRequired();
+                entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+                entity.Property(e => e.VehicleNumber).HasMaxLength(20);
+                entity.Property(e => e.VehicleType).HasMaxLength(20);
+                entity.Property(e => e.EntryGateId).HasMaxLength(20);
+                entity.Property(e => e.ImagePath).HasMaxLength(255);
+            });
         }
     }
 }

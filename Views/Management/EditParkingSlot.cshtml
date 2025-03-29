@@ -17,9 +17,9 @@
         <div class="form-group">
             <label asp-for="SpaceType" class="control-label">Space Type</label>
             <select asp-for="SpaceType" class="form-control" disabled="@(Model.CurrentVehicle != null)">
-                <option value="car">Car</option>
-                <option value="motorcycle">Motorcycle</option>
-                <option value="truck">Truck</option>
+                <option value="Car">Car</option>
+                <option value="Motorcycle">Motorcycle</option>
+                <option value="Truck">Truck</option>
             </select>
             <span asp-validation-for="SpaceType" class="text-danger"></span>
         </div>

@@ -16,6 +16,9 @@ namespace ParkIRC.Models
             SpaceNumber = string.Empty;
             SpaceType = string.Empty;
             Location = string.Empty;
+            
+            // Set default value for IsActive
+            IsActive = true;
         }
         
         public int Id { get; set; }
@@ -39,6 +42,8 @@ namespace ParkIRC.Models
         public decimal HourlyRate { get; set; }
         
         public int? CurrentVehicleId { get; set; }
+        
+        public bool IsActive { get; set; }
         
         [InverseProperty("ParkingSpace")]
         public virtual Vehicle? CurrentVehicle { get; set; }

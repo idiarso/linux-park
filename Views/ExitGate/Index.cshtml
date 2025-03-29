@@ -366,13 +366,41 @@
             
             // Function to print receipt
             function printReceipt() {
-                // In a real implementation, this would call the print service
-                showAlert('info', 'Mencetak receipt...');
+                // Get receipt data
+                const ticketNumber = $('#receipt_vehicleNumber').text(); // Using vehicle number as ticket number for now
+                const vehicleNumber = $('#receipt_vehicleNumber').text();
+                const entryTime = $('#receipt_entryTime').text();
+                const exitTime = $('#receipt_exitTime').text();
+                const duration = $('#receipt_duration').text();
+                const amount = parseFloat($('#receipt_amount').text().replace(/[.,]/g, ''));
                 
-                // Simulate printing
-                setTimeout(function() {
-                    showAlert('success', 'Receipt berhasil dicetak');
-                }, 1500);
+                showLoading('Mencetak receipt...');
+                
+                // Call server to print receipt
+                $.ajax({
+                    type: 'POST',
+                    url: '@Url.Action("PrintReceipt", "ExitGate")',
+                    data: {
+                        ticketNumber: ticketNumber,
+                        vehicleNumber: vehicleNumber,
+                        entryTime: entryTime,
+                        exitTime: exitTime,
+                        duration: duration,
+                        amount: amount
+                    },
+                    success: function(response) {
+                        hideLoading();
+                        if (response.success) {
+                            showAlert('success', response.message);
+                        } else {
+                            showAlert('error', response.message);
+                        }
+                    },
+                    error: function() {
+                        hideLoading();
+                        showAlert('error', 'Terjadi kesalahan sistem');
+                    }
+                });
             }
             
             // Function to reset form for new transaction

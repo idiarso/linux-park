@@ -61,7 +61,10 @@ namespace ParkIRC.Controllers
         public async Task<IActionResult> ParkingSlots()
         {
             var parkingSpaces = await _context.ParkingSpaces
-                .FromSqlRaw("SELECT \"Id\", \"SpaceNumber\", \"SpaceType\", \"IsOccupied\", \"HourlyRate\", \"CurrentVehicleId\", '' AS \"Location\", '' AS \"ReservedFor\", \"LastOccupiedTime\", false AS \"IsReserved\" FROM \"ParkingSpaces\"")
+                .FromSqlRaw(@"SELECT ""Id"", ""SpaceNumber"", ""SpaceType"", ""IsOccupied"", ""HourlyRate"", 
+                    ""CurrentVehicleId"", '' AS ""Location"", '' AS ""ReservedFor"", ""LastOccupiedTime"", 
+                    false AS ""IsReserved"", ""IsActive"" 
+                    FROM ""ParkingSpaces""")
                 .ToListAsync();
             return View(parkingSpaces);
         }
@@ -77,9 +80,26 @@ namespace ParkIRC.Controllers
         {
             if (ModelState.IsValid)
             {
-                _context.Add(parkingSpace);
-                await _context.SaveChangesAsync();
-                return RedirectToAction(nameof(ParkingSlots));
+                try
+                {
+                    // Use direct SQL to insert a new parking space with only the columns that exist
+                    await _context.Database.ExecuteSqlRawAsync(
+                        @"INSERT INTO ""ParkingSpaces"" (""SpaceNumber"", ""SpaceType"", ""IsOccupied"", ""HourlyRate"", ""IsActive"", ""LastOccupiedTime"")
+                          VALUES ({0}, {1}, {2}, {3}, {4}, {5})",
+                        parkingSpace.SpaceNumber,
+                        parkingSpace.SpaceType,
+                        parkingSpace.IsOccupied,
+                        parkingSpace.HourlyRate,
+                        parkingSpace.IsActive,
+                        DateTime.Now);
+                    
+                    return RedirectToAction(nameof(ParkingSlots));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error creating parking space");
+                    ModelState.AddModelError("", "Error creating parking space: " + ex.Message);
+                }
             }
             return View(parkingSpace);
         }
@@ -91,7 +111,14 @@ namespace ParkIRC.Controllers
                 return NotFound();
             }
 
-            var parkingSpace = await _context.ParkingSpaces.FindAsync(id);
+            var parkingSpace = await _context.ParkingSpaces
+                .FromSqlRaw(@"SELECT ""Id"", ""SpaceNumber"", ""SpaceType"", ""IsOccupied"", ""HourlyRate"", 
+                    ""CurrentVehicleId"", '' AS ""Location"", '' AS ""ReservedFor"", ""LastOccupiedTime"", 
+                    false AS ""IsReserved"", ""IsActive"" 
+                    FROM ""ParkingSpaces"" 
+                    WHERE ""Id"" = {0}", id)
+                .FirstOrDefaultAsync();
+
             if (parkingSpace == null)
             {
                 return NotFound();
@@ -112,11 +139,25 @@ namespace ParkIRC.Controllers
             {
                 try
                 {
-                    _context.Update(parkingSpace);
-                    await _context.SaveChangesAsync();
+                    // Use direct SQL update to avoid the missing column issue
+                    await _context.Database.ExecuteSqlRawAsync(
+                        @"UPDATE ""ParkingSpaces"" SET 
+                          ""SpaceNumber"" = {0}, 
+                          ""SpaceType"" = {1}, 
+                          ""IsOccupied"" = {2}, 
+                          ""HourlyRate"" = {3},
+                          ""IsActive"" = {4}
+                          WHERE ""Id"" = {5}",
+                        parkingSpace.SpaceNumber,
+                        parkingSpace.SpaceType,
+                        parkingSpace.IsOccupied,
+                        parkingSpace.HourlyRate,
+                        parkingSpace.IsActive,
+                        parkingSpace.Id);
                 }
-                catch (DbUpdateConcurrencyException)
+                catch (Exception ex)
                 {
+                    _logger.LogError(ex, "Error updating parking space");
                     if (!ParkingSpaceExists(parkingSpace.Id))
                     {
                         return NotFound();
@@ -135,13 +176,19 @@ namespace ParkIRC.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> DeleteParkingSlot(int id)
         {
-            var parkingSpace = await _context.ParkingSpaces.FindAsync(id);
-            if (parkingSpace != null)
+            try
             {
-                _context.ParkingSpaces.Remove(parkingSpace);
-                await _context.SaveChangesAsync();
+                // Use direct SQL to delete the parking space
+                await _context.Database.ExecuteSqlRawAsync(
+                    @"DELETE FROM ""ParkingSpaces"" WHERE ""Id"" = {0}", id);
+                
+                return RedirectToAction(nameof(ParkingSlots));
             }
-            return RedirectToAction(nameof(ParkingSlots));
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting parking space");
+                return RedirectToAction(nameof(ParkingSlots));
+            }
         }
 
         private bool ParkingSpaceExists(int id)

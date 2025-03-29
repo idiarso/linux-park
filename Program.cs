@@ -171,6 +171,11 @@ try
             .SetApplicationName("ParkIRC");
     }
 
+    // Arduino integration services
+    builder.Services.Configure<SerialPortOptions>(builder.Configuration.GetSection("Hardware:Arduino"));
+    builder.Services.AddSingleton<TimeService>();
+    builder.Services.AddSingleton<SerialPortService>();
+
     var app = builder.Build();
 
     // Apply pending migrations automatically

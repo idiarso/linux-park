@@ -59,7 +59,9 @@ namespace ParkIRC.Services
             var duration = exitTime - vehicle.EntryTime;
             var hours = Math.Ceiling(duration.TotalHours);
             var hourlyRate = vehicle.ParkingSpace?.HourlyRate ?? 0m;
-            decimal totalAmount = (decimal)hours * hourlyRate;
+            
+            // Use flat rate instead of duration-based calculation
+            decimal totalAmount = hourlyRate;
 
             var transaction = new ParkingTransaction
             {
@@ -186,8 +188,6 @@ namespace ParkIRC.Services
                 throw new ArgumentException("Invalid vehicle or entry time");
             }
 
-            var duration = DateTime.UtcNow - vehicle.EntryTime;
-            var hours = Math.Ceiling(duration.TotalHours);
             var space = await _context.ParkingSpaces.FindAsync(vehicle.ParkingSpaceId);
             
             if (space == null)
@@ -195,7 +195,8 @@ namespace ParkIRC.Services
                 throw new InvalidOperationException("Vehicle is not assigned to a parking space");
             }
 
-            return (decimal)hours * space.HourlyRate;
+            // Return flat rate instead of duration-based fee
+            return space.HourlyRate;
         }
 
         private static string GenerateTransactionNumber()
