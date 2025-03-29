@@ -8,14 +8,16 @@ namespace ParkIRC.Middleware
     {
         private readonly RequestDelegate _next;
         private static readonly ConcurrentDictionary<string, DateTime> _lastRequestTimes = new();
-        private static readonly TimeSpan _requestInterval = TimeSpan.FromMilliseconds(100);
+        private static readonly TimeSpan _requestInterval = TimeSpan.FromMilliseconds(500);
         
         private static readonly string[] _excludedPaths = new[] 
         { 
+            "/parkingHub",
             "/Parking/RecordEntry",
             "/Management/CreateParkingSlot",
             "/Management/EditParkingSlot",
             "/Management/DeleteParkingSlot",
+            "/Management/ApplicationSettings",
             "/Rates/Create",
             "/Rates/Edit",
             "/Rates/Delete",

@@ -1,19 +1,15 @@
-@model ParkIRC.Models.ViewModels.RestoreViewModel
+@model ParkIRC.ViewModels.RestoreViewModel
 @{
-    ViewData["Title"] = "Restore System";
+    ViewData["Title"] = "Restore Database";
 }
 
 <div class="container-fluid py-4">
-    <div class="row mb-4">
+    <div class="row">
         <div class="col-12">
-            <a href="@Url.Action("Index", "Management")" class="btn btn-secondary mb-3">
-                <i class="fas fa-arrow-left me-2"></i> Back to Management
-            </a>
-            
             @if (TempData["Success"] != null)
             {
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    @TempData["Success"]
+                    <i class="fas fa-check-circle me-2"></i>@TempData["Success"]
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             }
@@ -21,91 +17,150 @@
             @if (TempData["Error"] != null)
             {
                 <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    @TempData["Error"]
+                    <i class="fas fa-exclamation-circle me-2"></i>@TempData["Error"]
                     <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                 </div>
             }
             
-            <div class="card">
-                <div class="card-header bg-warning text-dark">
-                    <h4 class="mb-0">Restore System</h4>
+            <div class="card shadow mb-4">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <i class="fas fa-undo me-2"></i>Restore Database & Aplikasi
+                    </h6>
+                    <a href="@Url.Action("Backup", "Management")" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-download me-1"></i> Ke Menu Backup
+                    </a>
                 </div>
                 <div class="card-body">
                     <div class="alert alert-warning">
                         <i class="fas fa-exclamation-triangle me-2"></i>
-                        <strong>Warning:</strong> Restoring will overwrite your current data. Make sure you have a backup before proceeding.
+                        <strong>Perhatian!</strong> Restore akan menimpa data yang ada saat ini. Pastikan Anda telah membuat backup terbaru sebelum melakukan restore.
                     </div>
-                    
-                    @if (Model.AvailableBackups.Any())
-                    {
-                        <form method="post" asp-action="PerformRestore">
-                            <div class="form-group mb-4">
-                                <label for="SelectedBackup">Select Backup to Restore:</label>
-                                <select class="form-select" id="SelectedBackup" name="SelectedBackup" required>
-                                    <option value="">-- Select Backup --</option>
+                
+                    <form method="post" action="@Url.Action("PerformRestore")" enctype="multipart/form-data">
+                        @Html.AntiForgeryToken()
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Pilih File Backup yang Akan di-Restore</label>
+                            
+                            @if (Model.AvailableBackups.Any())
+                            {
+                                <select name="SelectedBackup" class="form-select" required>
+                                    <option value="">-- Pilih File Backup --</option>
                                     @foreach (var backup in Model.AvailableBackups)
                                     {
-                                        <option value="@backup">@backup</option>
+                                        var isSelected = !string.IsNullOrEmpty(Context.Request.Query["selectedBackup"]) && 
+                                                         Context.Request.Query["selectedBackup"] == backup;
+                                        
+                                        @if (isSelected)
+                                        {
+                                            <option value="@backup" selected>
+                                                @backup
+                                            </option>
+                                        }
+                                        else
+                                        {
+                                            <option value="@backup">
+                                                @backup
+                                            </option>
+                                        }
                                     }
                                 </select>
+                            }
+                            else
+                            {
+                                <div class="alert alert-info">
+                                    Tidak ada file backup yang tersedia. Silakan buat backup terlebih dahulu.
+                                </div>
+                            }
+                            
+                            <div class="mt-3">
+                                <span>atau</span>
                             </div>
                             
-                            <div class="form-group mb-4">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="RestoreDatabase" name="RestoreDatabase" checked>
-                                    <label class="form-check-label" for="RestoreDatabase">
-                                        Restore Database
-                                    </label>
-                                </div>
-                                
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="RestoreUploads" name="RestoreUploads" checked>
-                                    <label class="form-check-label" for="RestoreUploads">
-                                        Restore Uploads
-                                    </label>
-                                </div>
-                                
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="RestoreConfig" name="RestoreConfig" checked>
-                                    <label class="form-check-label" for="RestoreConfig">
-                                        Restore Configuration
-                                    </label>
-                                </div>
+                            <div class="mt-3">
+                                <label class="form-label">Upload File Backup (.zip)</label>
+                                <input type="file" class="form-control" name="BackupFile" accept=".zip">
                             </div>
-                            
-                            <button type="submit" class="btn btn-warning">
-                                <i class="fas fa-undo me-2"></i> Restore System
-                            </button>
-                        </form>
-                    }
-                    else
-                    {
-                        <div class="alert alert-info">
-                            No backups available for restore. Please create a backup first.
-                        </div>
-                    }
-                </div>
-            </div>
-            
-            <div class="card mt-4">
-                <div class="card-header">
-                    <h4 class="mb-0">Upload Backup</h4>
-                </div>
-                <div class="card-body">
-                    <p>If you have a backup file from another server, you can upload it here:</p>
-                    
-                    <form method="post" enctype="multipart/form-data" asp-action="UploadBackup">
-                        <div class="form-group mb-3">
-                            <label for="backupFile">Backup File (ZIP):</label>
-                            <input type="file" class="form-control" id="backupFile" name="backupFile" accept=".zip" required>
                         </div>
                         
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-upload me-2"></i> Upload Backup
+                        <div class="mb-3">
+                            <label class="form-label">Opsi Restore</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="RestoreDatabase" name="RestoreDatabase" value="true" checked>
+                                <label class="form-check-label" for="RestoreDatabase">
+                                    Restore Database
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="RestoreUploads" name="RestoreUploads" value="true" checked>
+                                <label class="form-check-label" for="RestoreUploads">
+                                    Restore Files & Uploads
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="RestoreConfig" name="RestoreConfig" value="true" checked>
+                                <label class="form-check-label" for="RestoreConfig">
+                                    Restore Konfigurasi
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="confirmRestore" required>
+                            <label class="form-check-label" for="confirmRestore">
+                                <strong>Saya mengerti bahwa proses restore akan menimpa data yang ada saat ini.</strong>
+                            </label>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-warning" id="restoreBtn" disabled>
+                            <i class="fas fa-undo me-1"></i> Mulai Restore
                         </button>
+                        <a href="@Url.Action("Index", "Management")" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-1"></i> Kembali
+                        </a>
                     </form>
                 </div>
             </div>
         </div>
     </div>
-</div> 
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            // Enable/disable restore button based on checkbox
+            $('#confirmRestore').change(function() {
+                $('#restoreBtn').prop('disabled', !$(this).is(':checked'));
+            });
+            
+            // Form validation
+            $('form').submit(function(e) {
+                const selectedBackup = $('select[name="SelectedBackup"]').val();
+                const uploadedFile = $('input[name="BackupFile"]').val();
+                
+                if (!selectedBackup && !uploadedFile) {
+                    e.preventDefault();
+                    toastr.error('Pilih file backup atau upload file backup baru');
+                    return false;
+                }
+                
+                if (!$('#RestoreDatabase').is(':checked') && 
+                    !$('#RestoreUploads').is(':checked') && 
+                    !$('#RestoreConfig').is(':checked')) {
+                    e.preventDefault();
+                    toastr.error('Pilih minimal satu opsi restore');
+                    return false;
+                }
+                
+                // Confirm restore
+                if (!confirm('Apakah Anda yakin ingin melakukan restore? Proses ini akan menimpa data yang ada saat ini.')) {
+                    e.preventDefault();
+                    return false;
+                }
+                
+                return true;
+            });
+        });
+    </script>
+} 

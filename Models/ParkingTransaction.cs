@@ -8,19 +8,24 @@ namespace ParkIRC.Models
     {
         public ParkingTransaction()
         {
+            // Generate ID
+            Id = $"TRX-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N").Substring(0, 6)}";
+            
             // Initialize required string properties
             TransactionNumber = string.Empty;
             PaymentStatus = "Pending";
-            PaymentMethod = string.Empty;
+            PaymentMethod = "Cash";
             Status = "Active";
             OperatorId = string.Empty;
             EntryPoint = string.Empty;
             TicketNumber = string.Empty;
-            VehicleId = 0;
             VehicleNumber = string.Empty;
             VehicleType = string.Empty;
-            ParkingSpaceId = 0;
             ImagePath = string.Empty;
+            VehicleImagePath = string.Empty;
+            
+            // Set default times
+            EntryTime = DateTime.Now;
         }
 
         public string Id { get; set; } = string.Empty;
@@ -74,7 +79,7 @@ namespace ParkIRC.Models
 
         public string ImagePath { get; set; }
 
-        public string VehicleImagePath { get; set; } = string.Empty;
+        public string VehicleImagePath { get; set; }
 
         public bool IsOfflineEntry { get; set; }
 
@@ -87,6 +92,6 @@ namespace ParkIRC.Models
         public virtual ParkingSpace? ParkingSpace { get; set; }
 
         [NotMapped]
-        public TimeSpan Duration { get; set; }
+        public TimeSpan Duration => ExitTime.HasValue ? ExitTime.Value - EntryTime : TimeSpan.Zero;
     }
 }

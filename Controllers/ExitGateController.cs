@@ -67,7 +67,6 @@ namespace ParkIRC.Controllers
                 
                 // Update transaksi
                 transaction.ExitTime = exitTime;
-                transaction.Duration = duration;
                 // Hitung biaya sesuai tarif
                 transaction.TotalAmount = CalculateFee(transaction.Vehicle.VehicleType, duration);
                 

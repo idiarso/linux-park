@@ -486,13 +486,9 @@ Project Link: [https://github.com/idiarsopgl/parkir28Mar](https://github.com/idi
 
 
 PS D:\AAA\Park28Maret-master> # Clean the project
->> dotnet clean ParkIRC.csproj
->>
->> # Restore dependencies
->> dotnet restore ParkIRC.csproj
->>
->> # Build the project
->> dotnet build ParkIRC.csproj
+dotnet clean ParkIRC.csproj
+dotnet restore ParkIRC.csproj
+dotnet build ParkIRC.csproj
 
 taskkill /F /IM ParkIRC.exe
 dotnet run --project ParkIRC.csproj
@@ -505,3 +501,5 @@ npx prisma studio
 echo "\dt" | psql -U postgres -d parkir2
 
 dotnet build ParkIRC.csproj && dotnet run --project ParkIRC.csproj
+
+ pkill -f "dotnet" && dotnet run

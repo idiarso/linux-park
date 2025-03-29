@@ -17,6 +17,11 @@ namespace ParkIRC.Models
             VehicleType = string.Empty;
             TicketNumber = string.Empty;
             CreatedBy = string.Empty;
+            PlateNumber = string.Empty;
+            Status = "Active";
+            ExternalSystemId = string.Empty;
+            EntryGateId = string.Empty;
+            ExitGateId = string.Empty;
         }
         
         public int Id { get; set; }
@@ -63,8 +68,12 @@ namespace ParkIRC.Models
         
         public bool IsActive { get; set; } = true;
 
+        [Required]
         public string PlateNumber { get; set; }
+        
+        [Required]
         public string Status { get; set; } // Active, Exited
+        
         public string ExternalSystemId { get; set; } // ID dari sistem Python jika diperlukan
         public string EntryGateId { get; set; }
         public string ExitGateId { get; set; }

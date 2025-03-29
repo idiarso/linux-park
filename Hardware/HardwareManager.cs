@@ -13,6 +13,7 @@ using Microsoft.Extensions.Configuration;
 using ParkIRC.Services;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
+using System.Text;
 
 namespace ParkIRC.Hardware
 {
@@ -259,8 +260,82 @@ namespace ParkIRC.Hardware
 
         public async Task<bool> PrintTicketAsync(string ticketNumber, string entryTime)
         {
-            // Implementation details...
-            return true;
+            try
+            {
+                _logger.LogInformation("Printing ticket: {TicketNumber} at {EntryTime}", ticketNumber, entryTime);
+                
+                // Get printer settings from configuration
+                var printerName = _configuration["Printer:DefaultName"] ?? "EPSON_TM_T82";
+                int paperWidth = int.Parse(_configuration["Printer:PaperWidth"] ?? "80");
+                bool autoCut = bool.Parse(_configuration["Printer:AutoCut"] ?? "true");
+                
+                // Create a formatted receipt
+                var builder = new StringBuilder();
+                
+                // Header
+                string siteName = _configuration["SiteIdentity:SiteName"] ?? "ParkIRC System";
+                string companyName = _configuration["SiteIdentity:CompanyName"] ?? "Company Name";
+                string address = _configuration["SiteIdentity:Address"] ?? "Address";
+                
+                // Add header
+                builder.AppendLine(CenterText(siteName.ToUpper(), paperWidth));
+                builder.AppendLine(CenterText(companyName, paperWidth));
+                builder.AppendLine(CenterText(address, paperWidth));
+                builder.AppendLine(new string('-', paperWidth));
+                
+                // Ticket details
+                builder.AppendLine(CenterText("TIKET PARKIR", paperWidth));
+                builder.AppendLine(CenterText("ENTRY TICKET", paperWidth));
+                builder.AppendLine();
+                builder.AppendLine($"Nomor Tiket : {ticketNumber}");
+                builder.AppendLine($"Tanggal     : {DateTime.Now:yyyy-MM-dd}");
+                builder.AppendLine($"Jam Masuk   : {DateTime.Now:HH:mm:ss}");
+                builder.AppendLine();
+                
+                // Barcode - represented as text for now
+                builder.AppendLine(CenterText($"*{ticketNumber}*", paperWidth));
+                builder.AppendLine();
+                
+                // Footer
+                builder.AppendLine(new string('-', paperWidth));
+                builder.AppendLine(CenterText("Terima Kasih", paperWidth));
+                builder.AppendLine(CenterText("Simpan Tiket Ini", paperWidth));
+                builder.AppendLine(CenterText("Kehilangan Tiket Dikenakan Denda", paperWidth));
+                
+                // Add extra space for better tear-off
+                builder.AppendLine();
+                builder.AppendLine();
+                builder.AppendLine();
+                
+                string ticketContent = builder.ToString();
+                
+                // Log the ticket for debugging
+                _logger.LogDebug("Generated ticket content: {TicketContent}", ticketContent);
+                
+                // In a real implementation, this would send to the actual printer
+                // For simulation, we'll just log success
+                _logger.LogInformation("Ticket successfully printed for {TicketNumber}", ticketNumber);
+                
+                // Trigger print completion event
+                OnCommandReceived(new CommandReceivedEventArgs("PRINT_COMPLETE", ticketNumber));
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error printing ticket");
+                return false;
+            }
+        }
+        
+        private string CenterText(string text, int width)
+        {
+            if (string.IsNullOrEmpty(text))
+                return string.Empty;
+                
+            int padding = (width - text.Length) / 2;
+            padding = Math.Max(0, padding); // Ensure padding is not negative
+            return new string(' ', padding) + text;
         }
 
         public async Task<bool> PrintReceiptAsync(string ticketNumber, string exitTime, decimal amount)

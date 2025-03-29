@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using System.Collections.Generic;
 using ParkIRC.ViewModels;
+using Microsoft.Extensions.Logging;
 
 namespace ParkIRC.Controllers
 {
@@ -15,56 +16,83 @@ namespace ParkIRC.Controllers
     public class HistoryController : Controller
     {
         private readonly ApplicationDbContext _context;
+        private readonly ILogger<HistoryController> _logger;
 
-        public HistoryController(ApplicationDbContext context)
+        public HistoryController(ApplicationDbContext context, ILogger<HistoryController> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         public async Task<IActionResult> Index(DateTime? startDate = null, DateTime? endDate = null, int page = 1, int pageSize = 10)
         {
-            var transactions = _context.ParkingTransactions
-                .Include(t => t.Vehicle)
-                .Include(t => t.ParkingSpace)
-                .AsQueryable();
-
-            if (startDate.HasValue)
+            try
             {
-                transactions = transactions.Where(t => t.EntryTime >= startDate.Value);
-            }
+                _logger.LogInformation("Loading History page with startDate: {StartDate}, endDate: {EndDate}, page: {Page}", 
+                    startDate, endDate, page);
+                
+                var transactions = _context.ParkingTransactions
+                    .Include(t => t.Vehicle)
+                    .Include(t => t.ParkingSpace)
+                    .AsQueryable();
 
-            if (endDate.HasValue)
-            {
-                transactions = transactions.Where(t => t.EntryTime <= endDate.Value.AddDays(1));
-            }
+                _logger.LogInformation("Initial transactions query created");
 
-            var totalCount = await transactions.CountAsync();
-
-            var parkingActivities = await transactions
-                .OrderByDescending(t => t.EntryTime)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .Select(t => new ParkingActivityViewModel
+                if (startDate.HasValue)
                 {
-                    VehicleNumber = t.Vehicle == null ? "Unknown" : t.Vehicle.VehicleNumber,
-                    EntryTime = t.EntryTime,
-                    ExitTime = t.ExitTime,
-                    Duration = t.ExitTime.HasValue ? 
-                        $"{(int)(t.ExitTime.Value - t.EntryTime).TotalHours}h {(t.ExitTime.Value - t.EntryTime).Minutes}m" : 
-                        "In Progress",
-                    Amount = t.TotalAmount,
-                    Status = t.PaymentStatus
-                })
-                .ToListAsync();
+                    transactions = transactions.Where(t => t.EntryTime >= startDate.Value);
+                }
 
-            // Store filter data in ViewData for maintaining state
-            ViewData["CurrentFilter"] = "";
-            ViewData["StartDate"] = startDate;
-            ViewData["EndDate"] = endDate;
-            ViewData["CurrentPage"] = page;
-            ViewData["TotalPages"] = (int)Math.Ceiling(totalCount / (double)pageSize);
+                if (endDate.HasValue)
+                {
+                    transactions = transactions.Where(t => t.EntryTime <= endDate.Value.AddDays(1));
+                }
 
-            return View(parkingActivities);
+                var totalCount = await transactions.CountAsync();
+                _logger.LogInformation("Total transactions count: {Count}", totalCount);
+
+                // Check for parked vehicles
+                var parkedVehicles = await _context.Vehicles.Where(v => v.IsParked).CountAsync();
+                _logger.LogInformation("Total parked vehicles: {Count}", parkedVehicles);
+
+                var parkingActivities = await transactions
+                    .OrderByDescending(t => t.EntryTime)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(t => new ParkingActivityViewModel
+                    {
+                        VehicleNumber = t.Vehicle == null ? "Unknown" : t.Vehicle.VehicleNumber,
+                        EntryTime = t.EntryTime,
+                        ExitTime = t.ExitTime,
+                        Duration = t.ExitTime.HasValue ? 
+                            $"{(int)(t.ExitTime.Value - t.EntryTime).TotalHours}h {(t.ExitTime.Value - t.EntryTime).Minutes}m" : 
+                            "In Progress",
+                        Amount = t.TotalAmount,
+                        Status = t.PaymentStatus
+                    })
+                    .ToListAsync();
+
+                _logger.LogInformation("Fetched {Count} parking activities for display", parkingActivities.Count);
+
+                // Store filter data in ViewData for maintaining state
+                ViewData["CurrentFilter"] = "";
+                ViewData["StartDate"] = startDate;
+                ViewData["EndDate"] = endDate;
+                ViewData["CurrentPage"] = page;
+                ViewData["TotalPages"] = (int)Math.Ceiling(totalCount / (double)pageSize);
+                ViewData["ParkedVehicles"] = parkedVehicles;
+
+                return View(parkingActivities);
+            }
+            catch(Exception ex)
+            {
+                _logger.LogError(ex, "Error when loading history page");
+                return View("Error", new ErrorViewModel 
+                { 
+                    Message = "Terjadi kesalahan saat memuat riwayat parkir: " + ex.Message,
+                    RequestId = HttpContext.TraceIdentifier
+                });
+            }
         }
 
         public async Task<IActionResult> Details(string? id)

@@ -8,6 +8,8 @@
     <style>
         .action-card {
             transition: all 0.3s ease;
+            margin-bottom: 15px;
+            height: 100%;
         }
         .action-card:hover {
             transform: translateY(-5px);
@@ -19,63 +21,91 @@
         }
         .stats-card {
             border-left: 4px solid;
+            margin-bottom: 15px;
         }
         .stats-card.primary { border-color: #4e73df; }
         .stats-card.success { border-color: #1cc88a; }
         .stats-card.warning { border-color: #f6c23e; }
         .stats-card.danger { border-color: #e74a3b; }
+        
+        /* Enhanced responsive styles */
+        @@media (max-width: 768px) {
+            .py-4 { padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
+            .mb-4 { margin-bottom: 0.75rem !important; }
+            .card-header { padding: 0.5rem 1rem; }
+            .card-body { padding: 0.75rem; }
+            .action-card .card-body { padding: 0.75rem; }
+            .btn { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
+            h5.mb-0 { font-size: 1rem; }
+            .stats-card h2 { font-size: 1.25rem; }
+            .card-title { font-size: 0.85rem; }
+            .table { font-size: 0.85rem; }
+            .table td, .table th { padding: 0.5rem; }
+            #simulation-log { height: 100px; }
+        }
+        
+        @@media (max-width: 576px) {
+            .py-4 { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+            .mb-4 { margin-bottom: 0.5rem !important; }
+            .g-3 { --bs-gutter-y: 0.5rem; }
+            .simulate-push-button { width: 100%; margin-bottom: 0.5rem; }
+            .card-header h5 { font-size: 0.9rem; }
+            .action-card .card-body i { font-size: 2rem !important; margin-bottom: 0.5rem !important; }
+            .action-card h5 { font-size: 0.9rem; margin-bottom: 0.5rem; }
+            .btn-light { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+        }
     </style>
 }
 
-<div class="container-fluid mt-4">
+<div class="container-fluid mt-2 mt-md-4">
     <!-- Quick Actions -->
-    <div class="row mb-4">
+    <div class="row mb-3 mb-md-4">
         <div class="col-12">
-            <div class="card">
+            <div class="card shadow">
                 <div class="card-header bg-primary text-white">
                     <h5 class="mb-0">Quick Actions</h5>
                 </div>
                 <div class="card-body">
                     <div class="row">
-                        <div class="col-md-3">
+                        <div class="col-6 col-md-3 mb-2 mb-md-0">
                             <div class="action-card card h-100 bg-success text-white">
                                 <div class="card-body text-center">
-                                    <i class="fas fa-car-side fa-3x mb-3"></i>
+                                    <i class="fas fa-car-side fa-2x fa-md-3x mb-2 mb-md-3"></i>
                                     <h5>Kendaraan Masuk</h5>
-                                    <button class="btn btn-light mt-2" onclick="showVehicleEntryModal()">
+                                    <button class="btn btn-light mt-1 mt-md-2" onclick="showVehicleEntryModal()">
                                         <i class="fas fa-plus"></i> Catat Masuk
                                     </button>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-6 col-md-3 mb-2 mb-md-0">
                             <div class="action-card card h-100 bg-danger text-white">
                                 <div class="card-body text-center">
-                                    <i class="fas fa-car fa-3x mb-3"></i>
+                                    <i class="fas fa-car fa-2x fa-md-3x mb-2 mb-md-3"></i>
                                     <h5>Kendaraan Keluar</h5>
-                                    <button class="btn btn-light mt-2" onclick="showVehicleExitModal()">
+                                    <button class="btn btn-light mt-1 mt-md-2" onclick="showVehicleExitModal()">
                                         <i class="fas fa-minus"></i> Catat Keluar
                                     </button>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-6 col-md-3 mb-2 mb-md-0">
                             <div class="action-card card h-100 bg-info text-white">
                                 <div class="card-body text-center">
-                                    <i class="fas fa-history fa-3x mb-3"></i>
+                                    <i class="fas fa-history fa-2x fa-md-3x mb-2 mb-md-3"></i>
                                     <h5>Riwayat</h5>
-                                    <button class="btn btn-light mt-2" onclick="showHistoryModal()">
+                                    <button class="btn btn-light mt-1 mt-md-2" onclick="showHistoryModal()">
                                         <i class="fas fa-search"></i> Lihat Riwayat
                                     </button>
                                 </div>
                             </div>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-6 col-md-3">
                             <div class="action-card card h-100 bg-warning text-white">
                                 <div class="card-body text-center">
-                                    <i class="fas fa-print fa-3x mb-3"></i>
+                                    <i class="fas fa-print fa-2x fa-md-3x mb-2 mb-md-3"></i>
                                     <h5>Cetak Laporan</h5>
-                                    <button class="btn btn-light mt-2" onclick="showReportModal()">
+                                    <button class="btn btn-light mt-1 mt-md-2" onclick="showReportModal()">
                                         <i class="fas fa-file-pdf"></i> Cetak
                                     </button>
                                 </div>
@@ -87,14 +117,40 @@
         </div>
     </div>
 
+    <!-- Simulation Panel -->
+    <div class="row mb-3 mb-md-4">
+        <div class="col-12">
+            <div class="card shadow">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0"><i class="fas fa-cogs me-2"></i>Simulasi Push Button</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-12 col-md-6 mb-2 mb-md-0">
+                            <p class="small mb-2">Gunakan simulasi push button untuk menguji sistem tanpa hardware fisik:</p>
+                            <button class="btn btn-primary simulate-push-button">
+                                <i class="fas fa-hand-pointer me-2"></i> Simulasi Push Button
+                            </button>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <div id="simulation-log" class="bg-light p-2 rounded" style="height: 150px; overflow-y: auto;">
+                                <p class="text-muted small">Log simulasi akan muncul di sini...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Stats Cards -->
-    <div class="row g-3 mb-4">
-        <div class="col-md-3">
+    <div class="row mb-3 mb-md-4">
+        <div class="col-6 col-md-3">
             <div class="card stats-card primary h-100">
                 <div class="card-body">
                     <div class="row align-items-center">
                         <div class="col">
-                            <h6 class="text-primary mb-2">Total Spaces</h6>
+                            <h6 class="text-primary mb-1 mb-md-2">Total</h6>
                             <h2 class="mb-0 total-spaces">@Model.TotalSpaces</h2>
                         </div>
                         <div class="col-auto">
@@ -104,12 +160,12 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-6 col-md-3">
             <div class="card stats-card success h-100">
                 <div class="card-body">
                     <div class="row align-items-center">
                         <div class="col">
-                            <h6 class="text-success mb-2">Available</h6>
+                            <h6 class="text-success mb-1 mb-md-2">Available</h6>
                             <h2 class="mb-0 available-spaces">@Model.AvailableSpaces</h2>
                         </div>
                         <div class="col-auto">
@@ -119,12 +175,12 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-6 col-md-3">
             <div class="card stats-card warning h-100">
                 <div class="card-body">
                     <div class="row align-items-center">
                         <div class="col">
-                            <h6 class="text-warning mb-2">Occupied</h6>
+                            <h6 class="text-warning mb-1 mb-md-2">Occupied</h6>
                             <h2 class="mb-0 occupied-spaces">@Model.OccupiedSpaces</h2>
                         </div>
                         <div class="col-auto">
@@ -134,12 +190,12 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-6 col-md-3">
             <div class="card stats-card danger h-100">
                 <div class="card-body">
                     <div class="row align-items-center">
                         <div class="col">
-                            <h6 class="text-danger mb-2">Today's Revenue</h6>
+                            <h6 class="text-danger mb-1 mb-md-2">Revenue</h6>
                             <h2 class="mb-0 today-revenue">Rp @Model.TodayRevenue.ToString("N0")</h2>
                         </div>
                         <div class="col-auto">
@@ -153,8 +209,8 @@
 
     <div class="row">
         <!-- Recent Activities -->
-        <div class="col-md-8 mb-4">
-            <div class="card h-100">
+        <div class="col-lg-8 mb-3 mb-lg-0">
+            <div class="card shadow h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">Recent Activities</h5>
                     <div class="btn-group">
@@ -163,7 +219,7 @@
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="filterActivities('exit')">Exit</button>
                     </div>
                 </div>
-                <div class="card-body recent-activity">
+                <div class="card-body p-0 p-md-3">
                     <div class="table-responsive">
                         <table class="table table-hover">
                             <thead>
@@ -178,22 +234,17 @@
                             <tbody id="activityTableBody">
                                 @foreach (var activity in Model.RecentActivities)
                                 {
-                                    <tr>
-                                        <td>@activity.EntryTime.ToString("HH:mm")</td>
-                                        <td>@activity.Vehicle?.VehicleNumber</td>
-                                        <td>@activity.Vehicle?.VehicleType</td>
+                                    <tr class="activity-row @(activity.Status.ToLower())-activity">
+                                        <td>@activity.EntryTime.ToString("HH:mm:ss")</td>
+                                        <td>@activity.VehicleNumber</td>
+                                        <td>@activity.VehicleType</td>
                                         <td>
-                                            @if (activity.ExitTime != default(DateTime))
-                                            {
-                                                <span class="badge bg-danger">Exit</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="badge bg-success">Entry</span>
-                                            }
+                                            <span class="badge bg-@(activity.Status == "Exit" ? "danger" : "success")">
+                                                @activity.Status
+                                            </span>
                                         </td>
                                         <td>
-                                            <button class="btn btn-sm btn-info" onclick="viewDetails('@activity.Vehicle?.VehicleNumber')">
+                                            <button class="btn btn-sm btn-info" onclick="viewDetails('@activity.VehicleNumber')">
                                                 <i class="fas fa-info-circle"></i>
                                             </button>
                                         </td>
@@ -202,71 +253,45 @@
                             </tbody>
                         </table>
                     </div>
-                    
-                    @{
-                        var prevDisabled = !Model.HasPreviousPage ? "disabled" : "";
-                        var nextDisabled = !Model.HasNextPage ? "disabled" : "";
-                    }
-
-                    <div class="d-flex justify-content-between align-items-center mt-3">
-                        <div class="text-muted">
-                            Showing @(((Model.CurrentPage - 1) * Model.PageSize) + 1) to @(Math.Min(Model.CurrentPage * Model.PageSize, Model.RecentActivities.TotalItems)) 
-                            of @Model.RecentActivities.TotalItems entries
-                        </div>
-                        <nav aria-label="Page navigation">
-                            <ul class="pagination mb-0">
-                                <li class="page-item @prevDisabled">
-                                    <a class="page-link" href="@Url.Action("LiveDashboard", new { pageNumber = Model.CurrentPage - 1 })" 
-                                       tabindex="-1" aria-disabled="@(Model.HasPreviousPage ? "false" : "true")">Previous</a>
-                                </li>
-                                @for (int i = 1; i <= Model.TotalPages; i++)
-                                {
-                                    <li class="page-item @(i == Model.CurrentPage ? "active" : "")">
-                                        <a class="page-link" href="@Url.Action("LiveDashboard", new { pageNumber = i })">@i</a>
-                                    </li>
-                                }
-                                <li class="page-item @nextDisabled">
-                                    <a class="page-link" href="@Url.Action("LiveDashboard", new { pageNumber = Model.CurrentPage + 1 })"
-                                       aria-disabled="@(Model.HasNextPage ? "false" : "true")">Next</a>
-                                </li>
-                            </ul>
-                        </nav>
-                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Vehicle Distribution -->
-        <div class="col-md-4 mb-4">
-            <div class="card h-100">
+        <!-- Space Availability -->
+        <div class="col-lg-4">
+            <div class="card shadow h-100">
                 <div class="card-header">
-                    <h5 class="mb-0">Vehicle Distribution</h5>
+                    <h5 class="mb-0">Space Availability</h5>
                 </div>
                 <div class="card-body">
-                    <canvas id="vehicleDistributionChart"></canvas>
-                    <div class="table-responsive mt-3">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Type</th>
-                                    <th>Count</th>
-                                    <th>%</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var item in Model.VehicleDistribution)
-                                {
-                                    var percentage = Model.OccupiedSpaces > 0 
-                                        ? (item.Count * 100.0 / Model.OccupiedSpaces).ToString("N1") 
-                                        : "0";
-                                    <tr>
-                                        <td>@item.VehicleType</td>
-                                        <td>@item.Count</td>
-                                        <td>@percentage%</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
+                    <div class="mb-3">
+                        <h6 class="mb-2">Occupancy Rate</h6>
+                        <div class="progress" style="height: 25px;">
+                            @{
+                                int occupancyRate = Model.TotalSpaces > 0 
+                                    ? (int)((double)Model.OccupiedSpaces / Model.TotalSpaces * 100) 
+                                    : 0;
+                                
+                                string progressClass = occupancyRate < 50 
+                                    ? "bg-success" 
+                                    : occupancyRate < 80 
+                                        ? "bg-warning" 
+                                        : "bg-danger";
+                            }
+                            <div class="progress-bar @progressClass" 
+                                 role="progressbar" 
+                                 style="width: @occupancyRate%;" 
+                                 aria-valuenow="@occupancyRate" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="100">
+                                @occupancyRate%
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h6 class="mb-2">Vehicle Distribution</h6>
+                        <canvas id="vehicleDistributionChart" height="200"></canvas>
                     </div>
                 </div>
             </div>
@@ -274,363 +299,178 @@
     </div>
 </div>
 
-<!-- Modals -->
-@await Html.PartialAsync("_VehicleEntryModal", new ParkIRC.ViewModels.VehicleEntryViewModel())
-@await Html.PartialAsync("_VehicleExitModal", new ParkIRC.ViewModels.VehicleExitViewModel())
-@await Html.PartialAsync("_HistoryModal", new ParkIRC.ViewModels.HistoryViewModel())
-@await Html.PartialAsync("_ReportModal", new ParkIRC.ViewModels.ReportViewModel())
+<!-- Include Vehicle Modal templates -->
+<partial name="_VehicleEntryModal" />
+<partial name="_VehicleExitModal" />
+<partial name="_HistoryModal" />
+
+<!-- Report Modal -->
+<div class="modal fade" id="reportModal" tabindex="-1" aria-labelledby="reportModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="reportModalLabel">Generate Report</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="reportForm">
+                    <div class="mb-3">
+                        <label for="reportType" class="form-label">Report Type</label>
+                        <select class="form-select" id="reportType" required>
+                            <option value="">-- Select Report Type --</option>
+                            <option value="daily">Daily Report</option>
+                            <option value="weekly">Weekly Report</option>
+                            <option value="monthly">Monthly Report</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="reportDate" class="form-label">Date</label>
+                        <input type="date" class="form-control" id="reportDate" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="reportFormat" class="form-label">Format</label>
+                        <select class="form-select" id="reportFormat" required>
+                            <option value="pdf">PDF</option>
+                            <option value="excel">Excel</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="generateReportBtn">Generate</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Error alert template (hidden) -->
+<div class="alert alert-danger alert-dismissible fade d-none" role="alert" id="errorAlert">
+    <strong>Error!</strong> <span id="errorMessage"></span>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
 
 @section Scripts {
-    <script src="~/lib/signalr/dist/browser/signalr.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="~/js/live-dashboard.js"></script>
     <script>
-        // SignalR Connection
-        const connection = new signalR.HubConnectionBuilder()
-            .withUrl("/parkingHub")
-            .withAutomaticReconnect()
-            .build();
-
-        // Initialize modals
-        const vehicleEntryModal = new bootstrap.Modal(document.getElementById('vehicleEntryModal'));
-        const vehicleExitModal = new bootstrap.Modal(document.getElementById('vehicleExitModal'));
-        const historyModal = new bootstrap.Modal(document.getElementById('historyModal'));
-        const reportModal = new bootstrap.Modal(document.getElementById('reportModal'));
-
-        // Handle vehicle entry form submission
-        function handleVehicleEntrySubmit(event) {
-            event.preventDefault();
-            
-            const formData = new FormData(event.target);
-            const data = {
-                vehicleNumber: formData.get('VehicleNumber'),
-                vehicleType: formData.get('VehicleType'),
-                driverName: formData.get('DriverName'),
-                phoneNumber: formData.get('PhoneNumber')
-            };
-            
-            // Validate form
-            if (!data.vehicleNumber) {
-                alert('Nomor kendaraan wajib diisi');
-                return false;
-            }
-
-            // Show loading
-            const submitButton = event.target.querySelector('button[type="submit"]');
-            const originalText = submitButton.innerHTML;
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
-
-            // Send request
-            fetch('/Parking/VehicleEntry', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'RequestVerificationToken': getAntiForgeryToken()
+        // Initialize vehicle distribution chart with responsive options
+        const ctx = document.getElementById('vehicleDistributionChart').getContext('2d');
+        const vehicleChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Car', 'Motorcycle', 'Truck', 'Other'],
+                datasets: [{
+                    data: [@Model.CarCount, @Model.MotorcycleCount, @Model.TruckCount, @Model.OtherCount],
+                    backgroundColor: [
+                        '#4e73df',
+                        '#1cc88a',
+                        '#f6c23e',
+                        '#36b9cc'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: window.innerWidth < 768 ? 'bottom' : 'right',
+                        labels: {
+                            boxWidth: window.innerWidth < 768 ? 12 : 20,
+                            font: {
+                                size: window.innerWidth < 768 ? 10 : 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        bodyFont: {
+                            size: window.innerWidth < 768 ? 10 : 12
+                        },
+                        titleFont: {
+                            size: window.innerWidth < 768 ? 11 : 13
+                        }
+                    }
                 },
-                body: JSON.stringify(data)
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Close modal
-                    vehicleEntryModal.hide();
-                    
-                    // Show success message
-                    showToast('success', data.message);
-                    
-                    // Reset form
-                    event.target.reset();
-                } else {
-                    showToast('error', data.message);
-                }
-            })
-            .catch(error => {
-                showToast('error', 'Terjadi kesalahan saat mencatat kendaraan');
-            })
-            .finally(() => {
-                submitButton.disabled = false;
-                submitButton.innerHTML = originalText;
-            });
-
-            return false;
-        }
-
-        // Handle vehicle exit form submission
-        function handleVehicleExitSubmit(event) {
-            event.preventDefault();
-            
-            const formData = new FormData(event.target);
-            const vehicleNumber = formData.get('VehicleNumber');
-            
-            // Validate form
-            if (!vehicleNumber) {
-                alert('Nomor kendaraan wajib diisi');
-                return false;
+                cutout: window.innerWidth < 576 ? '50%' : '60%'
             }
-
-            // Show loading
-            const submitButton = event.target.querySelector('button[type="submit"]');
-            const originalText = submitButton.innerHTML;
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
-
-            // Send request
-            fetch('/Parking/VehicleExit', {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'RequestVerificationToken': getAntiForgeryToken()
-                },
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Close modal
-                    vehicleExitModal.hide();
-                    
-                    // Show success message
-                    showToast('success', data.message);
-                    
-                    // Reset form
-                    event.target.reset();
-                } else {
-                    showToast('error', data.message);
-                }
-            })
-            .catch(error => {
-                showToast('error', 'Terjadi kesalahan saat mencatat keluar kendaraan');
-            })
-            .finally(() => {
-                submitButton.disabled = false;
-                submitButton.innerHTML = originalText;
-            });
-
-            return false;
-        }
-
-        // Load history
-        function loadHistory() {
-            const startDate = document.getElementById('startDate').value;
-            const endDate = document.getElementById('endDate').value;
-            const vehicleNumber = document.getElementById('vehicleNumber').value;
-            const page = 1;
-            const pageSize = 10;
-
-            fetch(`/Parking/GetVehicleHistory?StartDate=${startDate}&EndDate=${endDate}&VehicleNumber=${vehicleNumber}&Page=${page}&PageSize=${pageSize}`)
-                .then(response => response.json())
-                .then(data => {
-                    populateHistoryTable(data.data);
-                    updatePagination(data.totalPages);
-                })
-                .catch(error => {
-                    showToast('error', 'Terjadi kesalahan saat mengambil riwayat');
-                });
-        }
-
-        // Populate history table
-        function populateHistoryTable(transactions) {
-            const tbody = document.getElementById('historyTableBody');
-            tbody.innerHTML = transactions.map(transaction => `
-                <tr>
-                    <td>${transaction.transactionNumber}</td>
-                    <td>${transaction.vehicleNumber}</td>
-                    <td>${transaction.vehicleType}</td>
-                    <td>${transaction.entryTime}</td>
-                    <td>${transaction.exitTime}</td>
-                    <td>${transaction.duration}</td>
-                    <td>Rp ${transaction.amount.toLocaleString()}</td>
-                    <td>${transaction.paymentMethod}</td>
-                    <td>
-                        <button class="btn btn-sm btn-primary" onclick="printReceipt('${transaction.transactionNumber}')">
-                            <i class="fas fa-print"></i> Cetak
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        // Update pagination
-        function updatePagination(totalPages) {
-            // Implement pagination UI update here
-        }
-
-        // Print receipt
-        function printReceipt(transactionNumber) {
-            // Implement receipt printing logic here
-        }
-
-        // Handle report form submission
-        function handleReportSubmit(event) {
-            event.preventDefault();
-            
-            const formData = new FormData(event.target);
-            const reportType = formData.get('reportType');
-            
-            // Validate form
-            if (!reportType) {
-                alert('Tipe laporan wajib dipilih');
-                return false;
-            }
-
-            // Show loading
-            const submitButton = event.target.querySelector('button[type="submit"]');
-            const originalText = submitButton.innerHTML;
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mencetak...';
-
-            // Send request
-            fetch('/Parking/GenerateReport', {
-                method: 'POST',
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                    'RequestVerificationToken': getAntiForgeryToken()
-                },
-                body: formData
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Error generating report');
-                }
-                return response.blob();
-            })
-            .then(blob => {
-                // Create download link
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'ParkingReport.pdf';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-
-                // Close modal
-                reportModal.hide();
-            })
-            .catch(error => {
-                showToast('error', 'Terjadi kesalahan saat mencetak laporan');
-            })
-            .finally(() => {
-                submitButton.disabled = false;
-                submitButton.innerHTML = originalText;
-            });
-
-            return false;
-        }
-
-        // Show toast notification
-        function showToast(type, message) {
-            const toast = document.createElement('div');
-            toast.className = `toast align-items-center text-white bg-${type} border-0`;
-            toast.role = 'alert';
-            toast.setAttribute('aria-live', 'assertive');
-            toast.setAttribute('aria-atomic', 'true');
-            
-            toast.innerHTML = `
-                <div class="d-flex">
-                    <div class="toast-body">
-                        ${message}
-                    </div>
-                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-                </div>
-            `;
-
-            document.body.appendChild(toast);
-            
-            const bsToast = new bootstrap.Toast(toast, {
-                autohide: true,
-                delay: 3000
-            });
-            
-            bsToast.show();
-        }
-
-        // Get anti-forgery token
-        function getAntiForgeryToken() {
-            const token = document.querySelector('input[name="__RequestVerificationToken"]');
-            return token ? token.value : '';
-        }
-
-        // Initialize SignalR
-        connection.start()
-            .then(() => {
-                console.log('SignalR connected');
-            })
-            .catch(err => {
-                console.error('SignalR connection error: ' + err);
-            });
-
-        // Handle dashboard updates
-        connection.on('UpdateDashboard', (data) => {
-            updateStats(data);
-            updateVehicleDistribution(data.vehicleDistribution);
-            updateRecentActivities(data.recentActivities);
         });
 
-        // Update stats
-        function updateStats(data) {
-            document.querySelector('.total-spaces').textContent = data.totalSpaces;
-            document.querySelector('.available-spaces').textContent = data.availableSpaces;
-            document.querySelector('.occupied-spaces').textContent = data.occupiedSpaces;
-            document.querySelector('.today-revenue').textContent = data.todayRevenue.toFixed(2);
-        }
-
-        // Update vehicle distribution chart
-        function updateVehicleDistribution(distribution) {
-            vehicleChart.data.labels = distribution.map(d => d.type);
-            vehicleChart.data.datasets[0].data = distribution.map(d => d.count);
-            vehicleChart.update();
-        }
-
-        // Update recent activities
-        function updateRecentActivities(activities) {
-            const activitiesList = document.querySelector('.recent-activities');
-            activitiesList.innerHTML = activities.map(activity => `
-                <div class="activity-item">
-                    <div class="activity-time">${activity.time}</div>
-                    <div class="activity-content">
-                        <span class="vehicle-number">${activity.vehicleNumber}</span>
-                        <span class="vehicle-type">${activity.vehicleType}</span>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // Show modals
+        // Global functions
         function showVehicleEntryModal() {
-            vehicleEntryModal.show();
+            const modal = new bootstrap.Modal(document.getElementById('vehicleEntryModal'));
+            modal.show();
         }
 
         function showVehicleExitModal() {
-            vehicleExitModal.show();
+            const modal = new bootstrap.Modal(document.getElementById('vehicleExitModal'));
+            modal.show();
         }
 
         function showHistoryModal() {
-            historyModal.show();
+            const modal = new bootstrap.Modal(document.getElementById('historyModal'));
+            modal.show();
         }
 
         function showReportModal() {
-            reportModal.show();
+            const modal = new bootstrap.Modal(document.getElementById('reportModal'));
+            modal.show();
         }
 
-        // Handle report type change
-        document.getElementById('reportType').addEventListener('change', function() {
-            const customDateRange = document.getElementById('customDateRange');
-            if (this.value === 'Custom') {
-                customDateRange.style.display = 'block';
-            } else {
-                customDateRange.style.display = 'none';
-            }
+        // Handle window resize for chart responsiveness
+        window.addEventListener('resize', () => {
+            vehicleChart.options.plugins.legend.position = window.innerWidth < 768 ? 'bottom' : 'right';
+            vehicleChart.options.plugins.legend.labels.boxWidth = window.innerWidth < 768 ? 12 : 20;
+            vehicleChart.options.plugins.legend.labels.font.size = window.innerWidth < 768 ? 10 : 12;
+            vehicleChart.options.cutout = window.innerWidth < 576 ? '50%' : '60%';
+            vehicleChart.update();
         });
 
-        // Add CSRF token to forms
-        document.querySelectorAll('form').forEach(form => {
-            const token = document.querySelector('input[name="__RequestVerificationToken"]');
-            if (token) {
-                form.append(token.cloneNode());
+        // Filter activities
+        function filterActivities(type) {
+            const buttons = document.querySelectorAll('.btn-group .btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            
+            const clickedButton = document.querySelector(`.btn-group .btn[onclick="filterActivities('${type}')"]`);
+            clickedButton.classList.add('active');
+            
+            const rows = document.querySelectorAll('.activity-row');
+            
+            if (type === 'all') {
+                rows.forEach(row => row.style.display = '');
+            } else {
+                rows.forEach(row => {
+                    const isMatchingType = row.classList.contains(`${type}-activity`);
+                    row.style.display = isMatchingType ? '' : 'none';
+                });
             }
+        }
+
+        // Generate report
+        document.getElementById('generateReportBtn').addEventListener('click', function() {
+            const form = document.getElementById('reportForm');
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+
+            const reportType = document.getElementById('reportType').value;
+            const reportDate = document.getElementById('reportDate').value;
+            const reportFormat = document.getElementById('reportFormat').value;
+
+            window.location.href = `/Report/Generate?type=${reportType}&date=${reportDate}&format=${reportFormat}`;
+            
+            const modal = bootstrap.Modal.getInstance(document.getElementById('reportModal'));
+            modal.hide();
         });
+        
+        // Initialize with proper sizes for mobile
+        if (window.innerWidth < 768) {
+            const icons = document.querySelectorAll('.action-card .card-body i');
+            icons.forEach(icon => {
+                icon.classList.remove('fa-3x');
+                icon.classList.add('fa-2x');
+            });
+        }
     </script>
 } 

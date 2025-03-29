@@ -375,6 +375,62 @@ namespace ParkIRC.Services
             return await PrintReceiptAsync(ticketNumber, exitTime, amount);
         }
 
+        public async Task<bool> PrintTicket(string ticketContent)
+        {
+            ThrowIfDisposed();
+            ArgumentNullException.ThrowIfNull(ticketContent);
+
+            await _printLock.WaitAsync();
+            try
+            {
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    // Use lp command for Linux
+                    var tempFile = Path.GetTempFileName();
+                    await File.WriteAllTextAsync(tempFile, ticketContent);
+                    
+                    var process = new System.Diagnostics.Process
+                    {
+                        StartInfo = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "lp",
+                            Arguments = $"-d {_printerName} {tempFile}",
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            CreateNoWindow = true
+                        }
+                    };
+
+                    process.Start();
+                    await process.WaitForExitAsync();
+                    
+                    File.Delete(tempFile);
+                    
+                    return process.ExitCode == 0;
+                }
+                else
+                {
+                    // Send print command to Arduino for other platforms
+                    await SendCommand("PRINT");
+                    await SendCommand(ticketContent);
+                    
+                    // Wait for print completion acknowledgment
+                    var response = await ReadResponse();
+                    return response == "OK";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error printing ticket content");
+                return false;
+            }
+            finally
+            {
+                _printLock.Release();
+            }
+        }
+
         public string GetPrinterPort()
         {
             ThrowIfDisposed();
@@ -631,5 +687,7 @@ namespace ParkIRC.Services
         public string VehicleNumber { get; set; } = string.Empty;
         public string EntryTime { get; set; } = string.Empty;
         public string Barcode { get; set; } = string.Empty;
+        public string VehicleType { get; set; } = string.Empty;
+        public string SpaceNumber { get; set; } = string.Empty;
     }
 }

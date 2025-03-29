@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using ParkIRC.Hardware;
+using System.Linq;
 
 namespace ParkIRC.Hubs
 {
@@ -270,27 +271,157 @@ namespace ParkIRC.Hubs
         /// <summary>
         /// Called when push button is pressed at entry gate
         /// </summary>
-        public async Task PushButtonPressed(string entryPoint)
+        public async Task PushButtonPressed(string entryPoint = "ENTRY1")
         {
             try 
             {
-                _logger.LogInformation($"Push button pressed at entry point: {entryPoint}");
+                // Pastikan entryPoint tidak null atau kosong
+                if (string.IsNullOrEmpty(entryPoint))
+                {
+                    entryPoint = "ENTRY1";
+                }
                 
-                // Notify all clients about button press
-                await Clients.All.SendAsync("EntryButtonPressed", entryPoint);
+                // Get user
+                var user = Context.User;
+                var username = user?.Identity?.Name ?? "System";
                 
-                // Trigger camera to capture vehicle
-                await Clients.All.SendAsync("TriggerCamera", entryPoint);
+                _logger.LogInformation($"Push button pressed at {entryPoint} by {username}");
                 
-                // Open the gate using hardware manager
-                await _hardwareManager.OpenGate(entryPoint);
+                await Clients.All.SendAsync("PushButtonEvent", entryPoint);
                 
-                // Notify clients that gate is opening
-                await Clients.All.SendAsync("OpenEntryGate", entryPoint);
+                try
+                {
+                    // Generate barcode yang lebih robust
+                    string prefix = DateTime.Now.Year.ToString().Substring(2, 2);
+                    string monthDay = DateTime.Now.ToString("MMdd");
+                    string timeComponent = DateTime.Now.ToString("HHmmss");
+                    string randomDigits = new Random().Next(10, 99).ToString();
+                    
+                    // Format: YYMMDDHHMMSSxx (xx = random digits untuk mencegah duplikasi)
+                    string ticketNumber = $"PKR{prefix}{monthDay}{timeComponent}{randomDigits}";
+                    
+                    // Generate a random license plate for automatic entry
+                    string vehicleNumber = $"AUTO-{DateTime.Now:MMddHH}{randomDigits}";
+                    
+                    // Create vehicle object
+                    var vehicle = new Vehicle
+                    {
+                        VehicleNumber = vehicleNumber,
+                        VehicleType = "Motorcycle", // Default to motorcycle
+                        EntryTime = DateTime.Now,
+                        IsParked = true,
+                        Status = "Active",
+                        TicketNumber = ticketNumber,
+                        CreatedBy = username,
+                        // Set the PlateNumber field equal to VehicleNumber to fix null constraint
+                        PlateNumber = vehicleNumber,
+                        // Set required fields
+                        EntryGateId = entryPoint,
+                        ExternalSystemId = $"AUTO-{DateTime.Now:yyyyMMddHHmmss}"
+                    };
+                    
+                    // Find available parking space
+                    var parkingSpace = await _context.ParkingSpaces
+                        .Where(p => !p.IsOccupied && !p.IsReserved)
+                        .FirstOrDefaultAsync();
+                        
+                    if (parkingSpace == null)
+                    {
+                        _logger.LogWarning("No available parking space");
+                        await Clients.All.SendAsync("EntryError", "No available parking space");
+                        return;
+                    }
+                    
+                    // Assign parking space
+                    parkingSpace.IsOccupied = true;
+                    parkingSpace.LastOccupiedTime = DateTime.Now; // Update last occupied time
+                    
+                    // Avoid circular reference
+                    vehicle.ParkingSpaceId = parkingSpace.Id;
+                    
+                    // Create transaction
+                    var transaction = new ParkingTransaction
+                    {
+                        VehicleId = vehicle.Id,
+                        ParkingSpaceId = parkingSpace.Id,
+                        ParkingSpace = parkingSpace,
+                        EntryTime = DateTime.Now,
+                        TransactionNumber = ticketNumber,
+                        TicketNumber = ticketNumber,
+                        Status = "Active",
+                        PaymentMethod = "Cash",
+                        PaymentStatus = "Pending",
+                        VehicleNumber = vehicle.VehicleNumber,
+                        VehicleType = vehicle.VehicleType,
+                        EntryPoint = entryPoint,
+                        IsManualEntry = false,
+                        IsOfflineEntry = false,
+                        HourlyRate = parkingSpace.HourlyRate,
+                        Amount = 0m,
+                        TotalAmount = 0m,
+                        PaymentAmount = 0m,
+                        OperatorId = Context.UserIdentifier ?? "System",
+                        ImagePath = string.Empty,
+                        VehicleImagePath = string.Empty
+                    };
+                    
+                    // Save to database - save vehicle first to get an ID
+                    _logger.LogInformation($"Saving vehicle entry to database...");
+                    await _context.Vehicles.AddAsync(vehicle);
+                    await _context.SaveChangesAsync();
+                    
+                    // Now we have the vehicle ID, set it for transaction and update
+                    transaction.VehicleId = vehicle.Id;
+                    await _context.ParkingTransactions.AddAsync(transaction);
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation($"Vehicle entry saved successfully. ID: {vehicle.Id}, Ticket: {ticketNumber}");
+                    
+                    // Prepare barcode data - mengirimkan informasi lengkap untuk barcode
+                    var barcodeData = new
+                    {
+                        ticketNumber = ticketNumber,
+                        vehicleNumber = vehicleNumber,
+                        entryTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                        parkingSpaceNumber = parkingSpace.SpaceNumber,
+                        parkingSpaceId = parkingSpace.Id,
+                        vehicleType = vehicle.VehicleType,
+                        barcode = ticketNumber // The barcode value is the ticket number
+                    };
+                    
+                    // Print ticket
+                    try {
+                        await _hardwareManager.PrintTicketAsync(ticketNumber, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                        _logger.LogInformation($"Ticket printed: {ticketNumber}");
+                    }
+                    catch (Exception printEx) {
+                        _logger.LogError(printEx, "Error printing ticket");
+                    }
+
+                    // Trigger camera to capture vehicle
+                    await Clients.All.SendAsync("TriggerCamera", entryPoint);
+                    
+                    // Open the gate using hardware manager
+                    await _hardwareManager.OpenGate(entryPoint);
+                    
+                    // Notify clients that gate is opening
+                    await Clients.All.SendAsync("OpenEntryGate", entryPoint);
+                    
+                    // Send entry notification with ticket info dan barcode
+                    await Clients.All.SendAsync("EntryComplete", barcodeData);
+                    
+                    // Send specific barcode data for display
+                    await Clients.All.SendAsync("BarcodeGenerated", barcodeData);
+                }
+                catch (Exception dbEx)
+                {
+                    _logger.LogError(dbEx, "Database error during auto vehicle entry");
+                    await Clients.All.SendAsync("EntryError", $"Database error: {dbEx.Message}");
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing push button event");
+                await Clients.All.SendAsync("EntryError", $"System error: {ex.Message}");
             }
         }
         

@@ -15,6 +15,7 @@ namespace ParkIRC.Models
             // Initialize required string properties
             SpaceNumber = string.Empty;
             SpaceType = string.Empty;
+            Location = string.Empty;
         }
         
         public int Id { get; set; }
@@ -27,13 +28,15 @@ namespace ParkIRC.Models
         
         public bool IsOccupied { get; set; }
         
-        public bool IsActive { get; set; } = true;
+        public bool IsReserved { get; set; }
+        
+        public string Location { get; set; }
+        
+        public string? ReservedFor { get; set; }
         
         public DateTime? LastOccupiedTime { get; set; }
         
         public decimal HourlyRate { get; set; }
-        
-        public string? Description { get; set; }
         
         public int? CurrentVehicleId { get; set; }
         

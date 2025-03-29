@@ -35,10 +35,17 @@
                         <div class="mb-3">
                             <label for="driverName" class="form-label">Nama Pengemudi (Opsional)</label>
                             <input type="text" class="form-control" id="driverName" name="driverName" />
+                            <small class="text-muted">Dapat dikosongkan untuk sistem berbasis tiket</small>
                         </div>
                         <div class="mb-3">
                             <label for="phoneNumber" class="form-label">Nomor Kontak (Opsional)</label>
                             <input type="tel" class="form-control" id="phoneNumber" name="phoneNumber" />
+                            <small class="text-muted">Dapat dikosongkan untuk sistem berbasis tiket</small>
+                        </div>
+                        <div class="alert alert-info mt-3">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Sistem akan mencetak tiket dengan barcode yang berisi ID tiket dan waktu masuk.
+                            <div id="ticketInfo" class="mt-2 d-none fw-bold"></div>
                         </div>
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-save me-2"></i>Simpan
@@ -277,6 +284,8 @@
                     PhoneNumber: document.getElementById('phoneNumber').value.trim() || null
                 };
 
+                console.log('Submitting vehicle entry:', formData);
+
                 // Validate form
                 if (!formData.VehicleNumber) {
                     throw new Error('Nomor kendaraan wajib diisi');
@@ -300,47 +309,41 @@
                     body: JSON.stringify(formData)
                 });
 
+                console.log('Response status:', response.status);
                 const result = await response.json();
+                console.log('Response data:', result);
 
                 if (result.success) {
-                    // Show success notification
+                    // Show success message
                     Swal.fire({
                         icon: 'success',
                         title: 'Berhasil',
-                        text: 'Data kendaraan berhasil disimpan',
-                        showConfirmButton: true,
-                        confirmButtonText: 'OK',
-                        timer: 2000,
-                        timerProgressBar: true
-                    }).then(() => {
-                        // Reset form
-                        this.reset();
-                        // Stop camera if it's running
-                        if (videoStream) {
-                            stopButton.click();
-                        }
-                        // Update available spaces
-                        updateAvailableSpaces();
-                        
-                        // Notify using SignalR if connected
-                        if (connection && connection.state === signalR.HubConnectionState.Connected) {
-                            try {
-                                connection.invoke("NotifyVehicleEntry", formData.VehicleNumber);
-                            } catch (err) {
-                                console.error('SignalR notification error:', err);
-                            }
-                        }
+                        text: result.message || 'Kendaraan berhasil masuk'
                     });
+                    
+                    // Show ticket number if available
+                    if (result.ticketNumber) {
+                        const ticketInfo = document.getElementById('ticketInfo');
+                        if (ticketInfo) {
+                            ticketInfo.textContent = `Nomor Tiket: ${result.ticketNumber}`;
+                            ticketInfo.classList.remove('d-none');
+                        }
+                    }
+                    
+                    // Reset form
+                    this.reset();
+                    
+                    // Update parking space status
+                    updateParkingStatus();
                 } else {
-                    throw new Error(result.message || 'Gagal menyimpan data kendaraan');
+                    throw new Error(result.message || 'Gagal mencatat kendaraan');
                 }
             } catch (error) {
-                console.error('Error:', error);
+                console.error('Error in vehicle entry:', error);
                 Swal.fire({
                     icon: 'error',
                     title: 'Error',
-                    text: error.message || 'Terjadi kesalahan saat mencatat kendaraan',
-                    confirmButtonText: 'OK'
+                    text: error.message || 'Terjadi kesalahan saat mencatat kendaraan'
                 });
             } finally {
                 // Reset button state

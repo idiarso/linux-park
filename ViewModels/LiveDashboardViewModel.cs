@@ -16,6 +16,10 @@ namespace ParkIRC.ViewModels
         public int TotalPages { get; set; }
         public bool HasPreviousPage => CurrentPage > 1;
         public bool HasNextPage => CurrentPage < TotalPages;
+        public int CarCount { get; set; }
+        public int MotorcycleCount { get; set; }
+        public int TruckCount { get; set; }
+        public int OtherCount { get; set; }
     }
 
     public class VehicleDistributionItem

@@ -117,14 +117,6 @@
                         </ul>
                     </li>
 
-                    <!-- Menu Cepat -->
-                    <li class="geex-header__menu__item">
-                        <a href="@Url.Action("QuickAccess","Parking")" class="geex-header__menu__link">
-                            <i class="fas fa-th-large fa-sm"></i>
-                            <span>Menu Cepat</span>
-                        </a>
-                    </li>
-
                     <!-- Kendaraan -->
                     <li class="geex-header__menu__item has-children">
                         <a href="#" class="geex-header__menu__link">
@@ -180,28 +172,59 @@
                             </a>
                             <ul class="geex-header__submenu">
                                 <li class="geex-header__menu__item">
-                                    <a href="@Url.Action("ParkingSlots","Management")" class="geex-header__menu__link">
+                                    <a href="/Management/ParkingSlots" class="geex-header__menu__link">
                                         <i class="fas fa-th fa-sm"></i> Kelola Slot
                                     </a>
                                 </li>
                                 <li class="geex-header__menu__item">
-                                    <a href="@Url.Action("Operators","Management")" class="geex-header__menu__link">
+                                    <a href="/Management/Operators" class="geex-header__menu__link">
                                         <i class="fas fa-users fa-sm"></i> Kelola Operator
                                     </a>
                                 </li>
                                 <li class="geex-header__menu__item">
-                                    <a href="@Url.Action("Shifts","Management")" class="geex-header__menu__link">
+                                    <a href="/Management/Shifts" class="geex-header__menu__link">
                                         <i class="fas fa-clock fa-sm"></i> Kelola Shift
                                     </a>
                                 </li>
                                 <li class="geex-header__menu__item">
-                                    <a href="@Url.Action("CameraSettings","Management")" class="geex-header__menu__link">
+                                    <a href="/Management/CameraSettings" class="geex-header__menu__link">
                                         <i class="fas fa-camera fa-sm"></i> Pengaturan Kamera
                                     </a>
                                 </li>
                                 <li class="geex-header__menu__item">
-                                    <a href="@Url.Action("Index","Rates")" class="geex-header__menu__link">
+                                    <a href="/Rates/Index" class="geex-header__menu__link">
                                         <i class="fas fa-money-bill-wave fa-sm"></i> Tarif Parkir
+                                    </a>
+                                </li>
+                                <!-- Quick actions for adding new items -->
+                                <li class="geex-header__menu__item">
+                                    <a href="/Management/CreateParkingSlot" class="geex-header__menu__link">
+                                        <i class="fas fa-plus fa-sm"></i> Tambah Slot
+                                    </a>
+                                </li>
+                                <li class="geex-header__menu__item">
+                                    <a href="/Management/CreateOperator" class="geex-header__menu__link">
+                                        <i class="fas fa-plus fa-sm"></i> Tambah Operator
+                                    </a>
+                                </li>
+                                <li class="geex-header__menu__item">
+                                    <a href="/Management/CreateShift" class="geex-header__menu__link">
+                                        <i class="fas fa-plus fa-sm"></i> Tambah Shift
+                                    </a>
+                                </li>
+                                <li class="geex-header__menu__item">
+                                    <a href="/Management/CreateCameraSetting" class="geex-header__menu__link">
+                                        <i class="fas fa-plus fa-sm"></i> Tambah Kamera
+                                    </a>
+                                </li>
+                                <li class="geex-header__menu__item">
+                                    <a href="/Rates/Create" class="geex-header__menu__link">
+                                        <i class="fas fa-plus fa-sm"></i> Tambah Tarif
+                                    </a>
+                                </li>
+                                <li class="geex-header__menu__item">
+                                    <a href="/Management/ApplicationSettings" class="geex-header__menu__link">
+                                        <i class="fas fa-cog fa-sm"></i> Pengaturan Aplikasi
                                     </a>
                                 </li>
                             </ul>
@@ -358,6 +381,9 @@
         });
     </script>
 
+    <!-- Button Fix JS -->
+    <script src="~/js/button-fix.js"></script>
+    
     <!-- Menu Fix JS -->
     <script src="~/js/menu-fix.js"></script>
 

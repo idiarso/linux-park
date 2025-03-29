@@ -7,6 +7,8 @@ let selectedEntryCameraId = null;
 let selectedExitCameraId = null;
 let isAutoEntryEnabled = true;
 let isAutoExitEnabled = true;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 // Initialize DataTables
 const recentEntriesTable = $('#recentEntriesTable').DataTable({
@@ -25,24 +27,395 @@ const recentExitsTable = $('#recentExitsTable').DataTable({
     pageLength: 5
 });
 
-// SignalR connection for real-time updates
-const connection = new signalR.HubConnectionBuilder()
-    .withUrl("/parkingHub")
-    .withAutomaticReconnect()
-    .build();
+// SignalR Connection
+let connection;
 
-// Connect to SignalR hub
-connection.start()
-    .then(() => {
-        console.log("Connected to ParkingHub");
-        updateDashboardStats();
-    })
-    .catch(err => console.error("Error connecting to ParkingHub:", err));
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize SignalR
+    initializeSignalR();
+    
+    // Add event listeners
+    initPushButton();
+    
+    // Initialize filter buttons
+    initializeFilters();
+    
+    // Make entire cards clickable for better mobile experience
+    makeCardsClickable();
+});
 
-// SignalR event handlers
-connection.on("UpdateDashboardStats", updateDashboardStats);
-connection.on("UpdateRecentEntries", updateRecentEntries);
-connection.on("UpdateRecentExits", updateRecentExits);
+function initializeSignalR() {
+    connection = new signalR.HubConnectionBuilder()
+        .withUrl("/parkingHub")
+        .withAutomaticReconnect([0, 2000, 5000, 10000, 15000, 30000]) // Retry quickly at first, then with increasing delays
+        .configureLogging(signalR.LogLevel.Information)
+        .build();
+    
+    // Connect to hub
+    connection.start()
+        .then(() => {
+            console.log('SignalR connected');
+            showToast('success', 'Connected to server');
+            addToSimulationLog('Connected to server', 'success');
+            reconnectAttempts = 0;
+            
+            // Register handlers after connected
+            registerSignalRHandlers();
+        })
+        .catch(err => {
+            console.error('Error connecting to SignalR hub', err);
+            addToSimulationLog('Connection error: ' + err.message, 'error');
+            
+            // Retry connection with exponential backoff
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++;
+                const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                addToSimulationLog(`Reconnecting in ${delay/1000} seconds... (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`, 'warning');
+                
+                setTimeout(() => {
+                    initializeSignalR();
+                }, delay);
+            } else {
+                addToSimulationLog('Max reconnection attempts reached. Please refresh the page.', 'error');
+                showErrorAlert('Connection Failed', 'Failed to connect to server after multiple attempts. Please refresh the page.');
+            }
+        });
+        
+    // Handle reconnection events
+    connection.onreconnecting(error => {
+        console.log('Connection lost, reconnecting...', error);
+        addToSimulationLog('Connection lost, reconnecting...', 'warning');
+    });
+    
+    connection.onreconnected(connectionId => {
+        console.log('Reconnected with connection ID:', connectionId);
+        addToSimulationLog('Reconnected to server', 'success');
+        showToast('success', 'Reconnected to server');
+    });
+    
+    connection.onclose(error => {
+        console.log('Connection closed', error);
+        addToSimulationLog('Connection closed', 'error');
+    });
+}
+
+function initPushButton() {
+    // Add push button simulator
+    const pushButton = document.querySelector('.simulate-push-button');
+    if (pushButton) {
+        pushButton.addEventListener('click', function() {
+            simulatePushButton();
+        });
+    }
+}
+
+function initializeFilters() {
+    // Activity filter buttons
+    const filterButtons = document.querySelectorAll('[onclick^="filterActivities"]');
+    if (filterButtons.length > 0) {
+        filterButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                // Remove active class from all buttons
+                filterButtons.forEach(b => b.classList.remove('active'));
+                // Add active class to clicked button
+                this.classList.add('active');
+            });
+        });
+    }
+}
+
+function makeCardsClickable() {
+    // Make action cards fully clickable
+    const actionCards = document.querySelectorAll('.action-card');
+    actionCards.forEach(card => {
+        const button = card.querySelector('button');
+        if (button) {
+            card.style.cursor = 'pointer';
+            card.addEventListener('click', function(e) {
+                // Prevent clicking if the actual button was clicked
+                if (e.target === button || button.contains(e.target)) {
+                    return;
+                }
+                // Trigger button click
+                button.click();
+            });
+        }
+    });
+}
+
+function simulatePushButton() {
+    if (!connection) {
+        console.error('SignalR connection not initialized');
+        showToast('error', 'Connection not initialized. Please refresh the page.');
+        addToSimulationLog('Error: Connection not initialized', 'error');
+        return;
+    }
+    
+    if (connection.state !== signalR.HubConnectionState.Connected) {
+        console.error('SignalR not connected, current state:', connection.state);
+        showToast('error', 'Not connected to server. Please wait for reconnection or refresh the page.');
+        addToSimulationLog('Error: Not connected to server (state: ' + connection.state + ')', 'error');
+        return;
+    }
+    
+    console.log('Simulating push button...');
+    
+    const entryPoint = "ENTRY1"; // Default entry point
+    
+    // Show spinner on button
+    const btn = document.querySelector('.simulate-push-button');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+    
+    // Add to simulation log immediately
+    addToSimulationLog('Sending push button event...', 'info');
+    
+    // Call the hub method
+    connection.invoke("PushButtonPressed", entryPoint)
+        .then(() => {
+            console.log('Push button simulation sent successfully');
+            showToast('success', 'Push button simulation sent successfully');
+            
+            // Add to simulation log
+            addToSimulationLog('Push button event sent successfully', 'success');
+        })
+        .catch(err => {
+            console.error('Error simulating push button:', err);
+            showToast('error', 'Error simulating push button: ' + (err.message || 'Unknown error'));
+            
+            // Add to simulation log
+            addToSimulationLog('Error: ' + (err.message || 'Unknown error'), 'error');
+        })
+        .finally(() => {
+            // Reset button
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }, 2000);
+        });
+}
+
+function registerSignalRHandlers() {
+    // Handle receipt of push button event
+    connection.on('PushButtonEvent', function(entryPoint) {
+        console.log('Push button pressed at', entryPoint);
+        addToSimulationLog(`Push button pressed at gate ${entryPoint}`);
+        showToast('info', `Push button pressed at gate ${entryPoint}`);
+    });
+    
+    // Handle receipt of entry complete
+    connection.on('EntryComplete', function(data) {
+        console.log('Entry complete:', data);
+        addToSimulationLog(`Vehicle ${data.vehicleNumber} entered with ticket ${data.ticketNumber}`, 'success');
+        showToast('success', `Vehicle ${data.vehicleNumber} entered successfully`);
+        
+        // Play success sound
+        playSound('success');
+    });
+    
+    // Handle receipt of entry error
+    connection.on('EntryError', function(error) {
+        console.error('Entry error:', error);
+        addToSimulationLog(`Entry error: ${error}`, 'error');
+        showToast('error', error);
+        
+        // Play error sound
+        playSound('error');
+    });
+    
+    // Handle receipt of gate open/close
+    connection.on('OpenEntryGate', function(gateId) {
+        console.log('Gate opened:', gateId);
+        addToSimulationLog(`Gate ${gateId} opened`);
+        showToast('info', `Gate ${gateId} opened`);
+        
+        // After delay, close gate
+        setTimeout(() => {
+            addToSimulationLog(`Gate ${gateId} closed automatically (after timeout)`);
+            showToast('info', `Gate ${gateId} closed automatically`);
+        }, 5000);
+    });
+    
+    // Handle dashboard updates
+    connection.on('UpdateDashboard', function(data) {
+        console.log('Dashboard updated:', data);
+        updateDashboardUI(data);
+    });
+    
+    // Handle any errors
+    connection.on('Error', function(error) {
+        console.error('SignalR error:', error);
+        addToSimulationLog(`Error: ${error}`, 'error');
+        showToast('error', error);
+    });
+}
+
+function updateDashboardUI(data) {
+    // Update total spaces
+    const totalSpacesEl = document.querySelector('.total-spaces');
+    if (totalSpacesEl) totalSpacesEl.textContent = data.totalSpaces;
+    
+    // Update available spaces
+    const availableSpacesEl = document.querySelector('.available-spaces');
+    if (availableSpacesEl) availableSpacesEl.textContent = data.availableSpaces;
+    
+    // Update occupied spaces
+    const occupiedSpacesEl = document.querySelector('.occupied-spaces');
+    if (occupiedSpacesEl) occupiedSpacesEl.textContent = data.occupiedSpaces;
+    
+    // Update today's revenue
+    const todayRevenueEl = document.querySelector('.today-revenue');
+    if (todayRevenueEl) {
+        const formatter = new Intl.NumberFormat('id-ID');
+        todayRevenueEl.textContent = `Rp ${formatter.format(data.todayRevenue)}`;
+    }
+    
+    // Update activity table
+    if (data.recentActivities && data.recentActivities.length > 0) {
+        const tbody = document.getElementById('activityTableBody');
+        if (tbody) {
+            tbody.innerHTML = data.recentActivities.map(activity => `
+                <tr class="activity-row ${activity.status.toLowerCase()}-activity">
+                    <td>${activity.time}</td>
+                    <td>${activity.vehicleNumber}</td>
+                    <td>${activity.vehicleType}</td>
+                    <td>
+                        <span class="badge bg-${activity.status === 'Exit' ? 'danger' : 'success'}">
+                            ${activity.status}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-info" onclick="viewDetails('${activity.vehicleNumber}')">
+                            <i class="fas fa-info-circle"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+    }
+}
+
+function filterActivities(type) {
+    const rows = document.querySelectorAll('.activity-row');
+    if (rows.length === 0) return;
+    
+    rows.forEach(row => {
+        if (type === 'all' || row.classList.contains(`${type}-activity`)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+function addToSimulationLog(message, type = 'info') {
+    const logEl = document.getElementById('simulation-log');
+    if (!logEl) return;
+    
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = document.createElement('p');
+    logEntry.className = `mb-1 text-${type === 'error' ? 'danger' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'dark'}`;
+    logEntry.innerHTML = `<small>[${timestamp}]</small> ${message}`;
+    
+    logEl.prepend(logEntry);
+    
+    // Limit log size
+    if (logEl.children.length > 50) {
+        logEl.removeChild(logEl.lastChild);
+    }
+}
+
+function showToast(type, message) {
+    // Create toast container if it doesn't exist
+    let toastContainer = document.querySelector('.toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        document.body.appendChild(toastContainer);
+    }
+    
+    // Create toast
+    const toastId = 'toast-' + Date.now();
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'primary'} border-0`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    toast.setAttribute('id', toastId);
+    
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    `;
+    
+    toastContainer.appendChild(toast);
+    
+    // Show toast
+    const bsToast = new bootstrap.Toast(toast, {
+        delay: 3000
+    });
+    bsToast.show();
+    
+    // Remove toast after it's hidden
+    toast.addEventListener('hidden.bs.toast', function () {
+        toast.remove();
+    });
+}
+
+function playSound(type) {
+    try {
+        const audio = new Audio(`/sounds/${type}.mp3`);
+        audio.play().catch(err => console.error('Error playing sound:', err));
+    } catch (err) {
+        console.error('Error creating audio:', err);
+    }
+}
+
+function showErrorAlert(title, message) {
+    // Create a modal to show the error
+    const modalId = 'errorModal-' + Date.now();
+    const modalHTML = `
+        <div class="modal fade" id="${modalId}" tabindex="-1" aria-labelledby="${modalId}-label" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header bg-danger text-white">
+                        <h5 class="modal-title" id="${modalId}-label">${title}</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        ${message}
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-primary" onclick="window.location.reload()">Refresh Page</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Append modal to body
+    const modalEl = document.createElement('div');
+    modalEl.innerHTML = modalHTML;
+    document.body.appendChild(modalEl.firstChild);
+    
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById(modalId));
+    modal.show();
+}
+
+// Export functions for global use
+window.simulatePushButton = simulatePushButton;
+window.filterActivities = filterActivities;
+window.viewDetails = function(vehicleNumber) {
+    // Navigate to vehicle details page
+    window.location.href = `/Vehicle/Details?vehicleNumber=${encodeURIComponent(vehicleNumber)}`;
+};
 
 // Auto switches handlers
 document.getElementById('autoEntrySwitch').addEventListener('change', function() {

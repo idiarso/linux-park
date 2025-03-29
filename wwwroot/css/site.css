@@ -222,4 +222,48 @@ html[data-nav="top"] .geex-header {
     0% { top: 0; }
     50% { top: 120px; }
     100% { top: 0; }
+}
+
+/* Ticket Preview Styling */
+.ticket-preview {
+    font-family: monospace;
+    width: 350px;
+    margin: 0 auto;
+    border: 1px dashed #ccc;
+    padding: 15px;
+    background-color: #fff;
+}
+
+/* Print Media Styles */
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    
+    .ticket-preview, .ticket-preview * {
+        visibility: visible;
+    }
+    
+    .ticket-preview {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 80mm; /* Standard thermal receipt width */
+        border: none;
+        padding: 0;
+        margin: 0;
+    }
+    
+    .modal-dialog, .modal-content, .modal-body {
+        visibility: visible;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        background: transparent !important;
+    }
+    
+    .modal-header, .modal-footer, .btn-close {
+        display: none !important;
+    }
 } 

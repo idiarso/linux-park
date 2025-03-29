@@ -110,7 +110,15 @@ try
     });
 
     // Add SignalR support
-    builder.Services.AddSignalR();
+    builder.Services.AddSignalR(options => {
+        options.EnableDetailedErrors = true;
+        options.MaximumReceiveMessageSize = 102400; // 100 KB
+        options.StreamBufferCapacity = 20;
+        options.MaximumParallelInvocationsPerClient = 5;
+        // Configure timeouts with supported properties
+        options.KeepAliveInterval = TimeSpan.FromMinutes(1);
+        options.HandshakeTimeout = TimeSpan.FromMinutes(1);
+    });
 
     // Add controller support with JSON options for AJAX requests
     builder.Services.AddControllersWithViews()

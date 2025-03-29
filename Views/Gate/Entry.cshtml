@@ -14,6 +14,10 @@
                     <h6 class="m-0 font-weight-bold text-primary">Kamera</h6>
                     <div class="d-flex align-items-center">
                         <div class="form-check form-switch me-3">
+                            <input class="form-check-input" type="checkbox" id="cameraTypeSwitch">
+                            <label class="form-check-label" for="cameraTypeSwitch">Kamera IP</label>
+                        </div>
+                        <div class="form-check form-switch me-3">
                             <input class="form-check-input" type="checkbox" id="roiSwitch" checked>
                             <label class="form-check-label" for="roiSwitch">Area Deteksi</label>
                         </div>
@@ -24,6 +28,45 @@
                     </div>
                 </div>
                 <div class="card-body">
+                    <div id="cameraSettings" class="mb-3" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-2">
+                                    <label for="cameraIp" class="form-label">IP Kamera</label>
+                                    <input type="text" class="form-control" id="cameraIp" placeholder="192.168.1.100">
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="mb-2">
+                                    <label for="cameraPort" class="form-label">Port</label>
+                                    <input type="text" class="form-control" id="cameraPort" placeholder="8080">
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="mb-2">
+                                    <label for="cameraPath" class="form-label">Path</label>
+                                    <input type="text" class="form-control" id="cameraPath" placeholder="/video">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-2">
+                                    <label for="cameraUsername" class="form-label">Username</label>
+                                    <input type="text" class="form-control" id="cameraUsername" placeholder="admin">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-2">
+                                    <label for="cameraPassword" class="form-label">Password</label>
+                                    <input type="password" class="form-control" id="cameraPassword" placeholder="password">
+                                </div>
+                            </div>
+                        </div>
+                        <button id="connectCameraBtn" class="btn btn-primary btn-sm">
+                            <i class="fas fa-plug me-1"></i> Hubungkan
+                        </button>
+                    </div>
                     <div class="camera-wrapper position-relative">
                         <video id="camera" autoplay playsinline></video>
                         <div id="roiOverlay" class="roi-overlay">
@@ -42,6 +85,10 @@
                             <i class="fas fa-camera me-2"></i>Ambil Foto
                         </button>
                     </div>
+                    <!-- Hidden canvas elements for motion detection and image capture -->
+                    <canvas id="canvas" style="display:none;"></canvas>
+                    <canvas id="motionCanvas" style="display:none;"></canvas>
+                    <input type="hidden" id="base64Image" name="base64Image">
                 </div>
             </div>
         </div>
@@ -72,6 +119,7 @@
                 </div>
                 <div class="card-body">
                     <form id="vehicleEntryForm">
+                        @Html.AntiForgeryToken()
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="mb-3">
@@ -144,6 +192,7 @@
         let consecutiveDetections = 0; // Jumlah deteksi berturut-turut
         let requiredConsecutiveDetections = 2; // Jumlah deteksi berturut-turut yang diperlukan untuk trigger
         let cooldownActive = false; // Cooldown setelah capture
+        let isIpCamera = false; // Default using webcam
         
         // ROI (Region of Interest) settings
         let roi = {
@@ -157,15 +206,17 @@
         const canvas = document.getElementById('canvas');
         const motionCanvas = document.getElementById('motionCanvas');
         const captureBtn = document.getElementById('captureBtn');
-        const submitBtn = document.getElementById('submitBtn');
         const base64Image = document.getElementById('base64Image');
-        const entryForm = document.getElementById('entryForm');
+        const vehicleEntryForm = document.getElementById('vehicleEntryForm');
         const loadingOverlay = document.getElementById('loadingOverlay');
         const loadingText = document.getElementById('loadingText');
         const timeoutText = document.getElementById('timeoutText');
         const vehicleNumberInput = document.getElementById('vehicleNumber');
         const autoTriggerSwitch = document.getElementById('autoTriggerSwitch');
         const roiSwitch = document.getElementById('roiSwitch');
+        const cameraTypeSwitch = document.getElementById('cameraTypeSwitch');
+        const cameraSettings = document.getElementById('cameraSettings');
+        const connectCameraBtn = document.getElementById('connectCameraBtn');
         const motionStatus = document.getElementById('motionStatus');
         const roiOverlay = document.getElementById('roiOverlay');
         const roiBox = document.getElementById('roiBox');
@@ -176,11 +227,33 @@
         
         // Start camera when page loads
         document.addEventListener('DOMContentLoaded', () => {
-            startCamera();
+            // Load camera settings from server
+            loadCameraSettings();
             
             // Inisialisasi status deteksi gerakan berdasarkan switch
             updateMotionDetection(autoTriggerSwitch.checked);
             updateRoiVisibility(roiSwitch.checked);
+            
+            // Event listener untuk switch kamera IP/Webcam
+            cameraTypeSwitch.addEventListener('change', (e) => {
+                isIpCamera = e.target.checked;
+                cameraSettings.style.display = isIpCamera ? 'block' : 'none';
+                
+                // Jika beralih ke webcam, langsung mulai kamera
+                if (!isIpCamera) {
+                    stopCamera();
+                    startCamera();
+                    saveCameraSettings(false);
+                }
+            });
+            
+            // Event listener untuk tombol hubungkan kamera IP
+            connectCameraBtn.addEventListener('click', () => {
+                if (isIpCamera) {
+                    stopCamera();
+                    startIpCamera();
+                }
+            });
             
             // Event listener untuk switch trigger otomatis
             autoTriggerSwitch.addEventListener('change', (e) => {
@@ -193,13 +266,17 @@
             });
             
             // Event listener untuk slider sensitivitas
-            sensitivityRange.addEventListener('input', (e) => {
-                motionSensitivity = parseInt(e.target.value);
-                sensitivityValue.textContent = motionSensitivity;
-            });
+            if (sensitivityRange) {
+                sensitivityRange.addEventListener('input', (e) => {
+                    motionSensitivity = parseInt(e.target.value);
+                    sensitivityValue.textContent = motionSensitivity;
+                });
+            }
             
             // Event listener untuk reset ROI button
-            resetRoiBtn.addEventListener('click', resetRoi);
+            if (resetRoiBtn) {
+                resetRoiBtn.addEventListener('click', resetRoi);
+            }
             
             // Setup ROI drag functionality
             setupRoiDrag();
@@ -207,15 +284,22 @@
 
         // Clean up camera when page unloads
         window.addEventListener('beforeunload', () => {
+            stopCamera();
+        });
+        
+        // Stop camera stream
+        function stopCamera() {
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
+                stream = null;
             }
             if (motionDetectionInterval) {
                 clearInterval(motionDetectionInterval);
+                motionDetectionInterval = null;
             }
-        });
+        }
 
-        // Start camera
+        // Start webcam
         async function startCamera() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({ 
@@ -231,8 +315,10 @@
                 // Tunggu video siap
                 video.onloadedmetadata = () => {
                     // Inisialisasi canvas untuk deteksi gerakan
-                    motionCanvas.width = video.videoWidth;
-                    motionCanvas.height = video.videoHeight;
+                    if (motionCanvas) {
+                        motionCanvas.width = video.videoWidth;
+                        motionCanvas.height = video.videoHeight;
+                    }
                     
                     // Inisialisasi ROI default (70% dari ukuran video di tengah)
                     initializeRoi();
@@ -247,6 +333,122 @@
             }
         }
         
+        // Start IP camera
+        async function startIpCamera() {
+            try {
+                const cameraIp = document.getElementById('cameraIp').value || '192.168.1.100';
+                const cameraPort = document.getElementById('cameraPort').value || '8080';
+                const cameraPath = document.getElementById('cameraPath').value || '/video';
+                const cameraUsername = document.getElementById('cameraUsername').value || 'admin';
+                const cameraPassword = document.getElementById('cameraPassword').value || 'admin';
+                
+                // Notifikasi pengguna dengan format yang sederhana
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Kamera IP',
+                    html: 'Sistem akan mencoba menghubungkan ke kamera IP: <br><code>' + cameraIp + ':' + cameraPort + '</code><p class="text-warning">Catatan: Koneksi langsung ke kamera IP mungkin dibatasi oleh browser.<br>Untuk produksi, gunakan proxy server.</p>',
+                    confirmButtonText: 'Mengerti'
+                });
+                
+                // Alternatif tampilan sederhana untuk demo
+                video.style.backgroundImage = "url('/images/camera-placeholder.jpg')";
+                video.style.backgroundSize = "cover";
+                video.style.backgroundPosition = "center";
+                
+                // Notifikasi pengguna bahwa ini hanya simulasi
+                video.insertAdjacentHTML('afterend', 
+                    '<div class="alert alert-warning mt-2"><i class="fas fa-exclamation-triangle me-2"></i>Mode simulasi kamera IP aktif. Untuk implementasi penuh, diperlukan konfigurasi server tambahan.</div>'
+                );
+                
+                // Simpan pengaturan kamera ke database
+                saveCameraSettings(true);
+                
+            } catch (err) {
+                console.error('Error accessing IP camera:', err);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Tidak dapat mengakses kamera IP. Periksa kembali pengaturan koneksi.'
+                });
+                
+                // Fallback to webcam
+                isIpCamera = false;
+                cameraTypeSwitch.checked = false;
+                cameraSettings.style.display = 'none';
+                startCamera();
+            }
+        }
+        
+        // Load camera settings
+        async function loadCameraSettings() {
+            try {
+                const response = await fetch('/Gate/GetCameraSettings');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const settings = data.settings;
+                    
+                    // Update UI
+                    isIpCamera = settings.type === 'IPCamera';
+                    cameraTypeSwitch.checked = isIpCamera;
+                    cameraSettings.style.display = isIpCamera ? 'block' : 'none';
+                    
+                    // Fill form fields
+                    document.getElementById('cameraIp').value = settings.ipAddress;
+                    document.getElementById('cameraPort').value = settings.port;
+                    document.getElementById('cameraPath').value = settings.path;
+                    document.getElementById('cameraUsername').value = settings.username;
+                    
+                    // Start appropriate camera
+                    if (isIpCamera) {
+                        startIpCamera();
+                    } else {
+                        startCamera();
+                    }
+                }
+            } catch (err) {
+                console.error('Error loading camera settings:', err);
+                // Fallback to webcam
+                startCamera();
+            }
+        }
+
+        // Save camera settings
+        async function saveCameraSettings(isIpCamera) {
+            try {
+                const settings = {
+                    gateId: 'GATE1', // Default gate ID
+                    type: isIpCamera ? 'IPCamera' : 'Webcam',
+                    ipAddress: document.getElementById('cameraIp').value,
+                    port: document.getElementById('cameraPort').value,
+                    path: document.getElementById('cameraPath').value,
+                    username: document.getElementById('cameraUsername').value,
+                    password: document.getElementById('cameraPassword').value,
+                    isActive: true
+                };
+                
+                // Get CSRF token
+                const tokenElement = document.querySelector('input[name="__RequestVerificationToken"]');
+                const token = tokenElement ? tokenElement.value : '';
+                
+                const response = await fetch('/Gate/SaveCameraSettings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'RequestVerificationToken': token
+                    },
+                    body: JSON.stringify(settings)
+                });
+                
+                const data = await response.json();
+                if (!data.success) {
+                    console.error('Error saving camera settings:', data.message);
+                }
+            } catch (err) {
+                console.error('Error saving camera settings:', err);
+            }
+        }
+
         // Initialize ROI with default values
         function initializeRoi() {
             const videoWidth = video.videoWidth;
@@ -557,8 +759,6 @@
             canvas.getContext('2d').drawImage(video, 0, 0);
             base64Image.value = canvas.toDataURL('image/jpeg');
             
-            submitBtn.disabled = false;
-
             Swal.fire({
                 icon: 'success',
                 title: 'Foto Berhasil',
@@ -605,7 +805,7 @@
         });
 
         // Handle form submission
-        entryForm.addEventListener('submit', async (e) => {
+        vehicleEntryForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
             loadingOverlay.style.display = 'block';
@@ -625,7 +825,7 @@
             }, 10000);
             
             try {
-                const formData = new FormData(entryForm);
+                const formData = new FormData(vehicleEntryForm);
                 const response = await fetch('/Gate/ProcessEntry', {
                     method: 'POST',
                     body: formData

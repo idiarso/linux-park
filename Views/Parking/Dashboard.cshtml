@@ -6,12 +6,21 @@
 
 @section Styles {
     <link rel="stylesheet" href="~/css/dashboard.css" />
+    <style>
+        /* Additional responsive styles */
+        @@media (max-width: 576px) {
+            .card-title { font-size: 0.85rem; }
+            .dashboard-card .card-body { padding: 0.75rem; }
+            .chart-container { margin-top: 0.5rem; }
+            .table td, .table th { padding: 0.5rem; }
+        }
+    </style>
 }
 
-<div class="container-fluid py-4">
+<div class="container-fluid py-3">
     <!-- Summary Cards -->
-    <div class="row g-3 mb-4">
-        <div class="col-xl-3 col-sm-6">
+    <div class="row g-2 mb-3">
+        <div class="col-xl-3 col-md-6 col-6">
             <div class="card dashboard-card bg-primary text-white h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
@@ -24,12 +33,12 @@
                 </div>
             </div>
         </div>
-        <div class="col-xl-3 col-sm-6">
+        <div class="col-xl-3 col-md-6 col-6">
             <div class="card dashboard-card bg-success text-white h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="card-title mb-0">Available Spaces</h6>
+                            <h6 class="card-title mb-0">Available</h6>
                             <h3 class="mt-2 mb-0">@Model.AvailableSpaces</h3>
                         </div>
                         <i class="fas fa-check-circle card-icon"></i>
@@ -37,12 +46,12 @@
                 </div>
             </div>
         </div>
-        <div class="col-xl-3 col-sm-6">
+        <div class="col-xl-3 col-md-6 col-6">
             <div class="card dashboard-card bg-info text-white h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="card-title mb-0">Today's Revenue</h6>
+                            <h6 class="card-title mb-0">Revenue</h6>
                             <h3 class="mt-2 mb-0">@Model.DailyRevenue.ToString("C0")</h3>
                         </div>
                         <i class="fas fa-money-bill-wave card-icon"></i>
@@ -50,12 +59,12 @@
                 </div>
             </div>
         </div>
-        <div class="col-xl-3 col-sm-6">
+        <div class="col-xl-3 col-md-6 col-6">
             <div class="card dashboard-card bg-warning text-white h-100">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="card-title mb-0">Occupancy Rate</h6>
+                            <h6 class="card-title mb-0">Occupancy</h6>
                             <h3 class="mt-2 mb-0">@(((Model.TotalSpaces - Model.AvailableSpaces) * 100.0 / Model.TotalSpaces).ToString("F1"))%</h3>
                         </div>
                         <i class="fas fa-chart-pie card-icon"></i>
@@ -66,10 +75,10 @@
     </div>
 
     <!-- Charts Row -->
-    <div class="row g-3 mb-4">
-        <div class="col-xl-8 col-lg-7">
+    <div class="row g-2 mb-3">
+        <div class="col-lg-8">
             <div class="card dashboard-card h-100">
-                <div class="card-header">
+                <div class="card-header py-2">
                     <h6 class="card-title mb-0">Hourly Occupancy</h6>
                 </div>
                 <div class="card-body">
@@ -79,9 +88,9 @@
                 </div>
             </div>
         </div>
-        <div class="col-xl-4 col-lg-5">
+        <div class="col-lg-4">
             <div class="card dashboard-card h-100">
-                <div class="card-header">
+                <div class="card-header py-2">
                     <h6 class="card-title mb-0">Vehicle Distribution</h6>
                 </div>
                 <div class="card-body">
@@ -97,7 +106,7 @@
     <div class="row">
         <div class="col-12">
             <div class="card dashboard-card">
-                <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
                     <h6 class="card-title mb-0">Recent Activity</h6>
                     <div class="card-actions">
                         <button class="btn btn-sm btn-outline-secondary" onclick="refreshActivity()">
@@ -105,7 +114,7 @@
                         </button>
                     </div>
                 </div>
-                <div class="card-body">
+                <div class="card-body p-0 p-md-3">
                     <div class="table-responsive">
                         <table class="table table-hover activity-table mb-0">
                             <thead>
@@ -144,20 +153,45 @@
 @section Scripts {
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        // Chart configuration with responsive options
-        const chartConfig = {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: true,
-                    position: window.innerWidth < 768 ? 'bottom' : 'right'
+        // Adjust chart options based on screen size
+        function getResponsiveOptions() {
+            const isMobile = window.innerWidth < 768;
+            const isSmallMobile = window.innerWidth < 576;
+            
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: isMobile ? 'bottom' : 'right',
+                        labels: {
+                            boxWidth: isMobile ? 12 : 20,
+                            font: {
+                                size: isMobile ? 10 : 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        bodyFont: {
+                            size: isMobile ? 10 : 12
+                        },
+                        titleFont: {
+                            size: isMobile ? 11 : 13
+                        }
+                    }
+                },
+                animation: {
+                    duration: 750
                 }
-            }
-        };
+            };
+        }
+
+        // Initialize charts with responsive options
+        const chartOptions = getResponsiveOptions();
 
         // Hourly Occupancy Chart
-        new Chart(document.getElementById('hourlyOccupancyChart'), {
+        const hourlyChart = new Chart(document.getElementById('hourlyOccupancyChart'), {
             type: 'line',
             data: {
                 labels: @Json.Serialize(Model.HourlyOccupancy.Select(x => x.Hour)),
@@ -170,19 +204,26 @@
                 }]
             },
             options: {
-                ...chartConfig,
+                ...chartOptions,
                 scales: {
                     y: {
                         beginAtZero: true,
                         max: 100,
                         ticks: {
-                            callback: value => `${value}%`
+                            callback: value => `${value}%`,
+                            font: {
+                                size: window.innerWidth < 768 ? 10 : 12
+                            }
                         }
                     },
                     x: {
                         ticks: {
                             maxRotation: 45,
-                            minRotation: 45
+                            minRotation: 45,
+                            font: {
+                                size: window.innerWidth < 768 ? 9 : 11
+                            },
+                            display: window.innerWidth > 450
                         }
                     }
                 }
@@ -190,7 +231,7 @@
         });
 
         // Vehicle Distribution Chart
-        new Chart(document.getElementById('vehicleDistributionChart'), {
+        const distributionChart = new Chart(document.getElementById('vehicleDistributionChart'), {
             type: 'doughnut',
             data: {
                 labels: @Json.Serialize(Model.VehicleDistribution.Select(x => x.Type)),
@@ -199,29 +240,59 @@
                     backgroundColor: [
                         'rgb(255, 99, 132)',
                         'rgb(54, 162, 235)',
-                        'rgb(255, 205, 86)'
+                        'rgb(255, 205, 86)',
+                        'rgb(75, 192, 192)'
                     ]
                 }]
             },
             options: {
-                ...chartConfig,
-                cutout: '60%'
+                ...chartOptions,
+                cutout: window.innerWidth < 576 ? '50%' : '60%'
             }
         });
 
         // Handle window resize for chart responsiveness
         window.addEventListener('resize', () => {
-            const charts = Chart.instances;
-            charts.forEach(chart => {
-                chart.options.plugins.legend.position = window.innerWidth < 768 ? 'bottom' : 'right';
-                chart.update();
-            });
+            const options = getResponsiveOptions();
+            
+            // Update hourly chart
+            hourlyChart.options.plugins.legend = options.plugins.legend;
+            hourlyChart.options.plugins.tooltip = options.plugins.tooltip;
+            hourlyChart.options.scales.x.ticks.display = window.innerWidth > 450;
+            hourlyChart.options.scales.x.ticks.font.size = window.innerWidth < 768 ? 9 : 11;
+            hourlyChart.options.scales.y.ticks.font.size = window.innerWidth < 768 ? 10 : 12;
+            hourlyChart.update();
+            
+            // Update distribution chart
+            distributionChart.options.plugins.legend = options.plugins.legend;
+            distributionChart.options.plugins.tooltip = options.plugins.tooltip;
+            distributionChart.options.cutout = window.innerWidth < 576 ? '50%' : '60%';
+            distributionChart.update();
         });
 
         // Function to refresh activity table
         function refreshActivity() {
-            // Add your refresh logic here
-            location.reload();
+            const refreshBtn = document.querySelector('.card-actions .btn');
+            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            refreshBtn.disabled = true;
+            
+            fetch(window.location.href)
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const newTable = doc.querySelector('.activity-table');
+                    document.querySelector('.activity-table').outerHTML = newTable.outerHTML;
+                    
+                    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+                    refreshBtn.disabled = false;
+                })
+                .catch(error => {
+                    console.error('Error refreshing activity:', error);
+                    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+                    refreshBtn.disabled = false;
+                    alert('Failed to refresh activity. Please try again.');
+                });
         }
     </script>
 }

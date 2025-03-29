@@ -4,16 +4,20 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using ParkIRC.Data;
 using ParkIRC.Models;
+using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
 
 namespace ParkIRC.Services
 {
     public class ParkingService : IParkingService
     {
         private readonly ApplicationDbContext _context;
+        private readonly ILogger<ParkingService> _logger;
 
-        public ParkingService(ApplicationDbContext context)
+        public ParkingService(ApplicationDbContext context, ILogger<ParkingService> logger)
         {
             _context = context;
+            _logger = logger;
         }
 
         public async Task<ParkingSpace> AssignParkingSpaceAsync(Vehicle vehicle)
@@ -91,21 +95,88 @@ namespace ParkIRC.Services
 
         public async Task<ParkingSpace> AssignParkingSpace(Vehicle vehicle)
         {
-            var availableSpace = await _context.ParkingSpaces
-                .FirstOrDefaultAsync(p => !p.IsOccupied);
-
-            if (availableSpace == null)
+            _logger.LogInformation($"Assigning parking space for vehicle {vehicle.VehicleNumber}");
+            
+            try
             {
-                throw new InvalidOperationException("No parking spaces available");
+                // Check if any parking spaces exist
+                var parkingSpacesCount = await _context.ParkingSpaces.CountAsync();
+                _logger.LogInformation($"Found {parkingSpacesCount} total parking spaces");
+                
+                if (parkingSpacesCount == 0)
+                {
+                    _logger.LogWarning("No parking spaces found in database, creating default spaces");
+                    
+                    // Create default parking spaces if none exist
+                    var defaultSpaces = new List<ParkingSpace>();
+                    for (int i = 1; i <= 10; i++)
+                    {
+                        defaultSpaces.Add(new ParkingSpace
+                        {
+                            SpaceNumber = $"A{i:D2}",
+                            SpaceType = "Standard",
+                            IsOccupied = false,
+                            HourlyRate = 5000M,
+                            IsReserved = false,
+                            Location = "Default"
+                        });
+                    }
+                    
+                    await _context.ParkingSpaces.AddRangeAsync(defaultSpaces);
+                    await _context.SaveChangesAsync();
+                    _logger.LogInformation("Created 10 default parking spaces");
+                }
+                
+                // Try to find an available space with direct query
+                var availableSpace = await _context.ParkingSpaces
+                    .Where(p => !p.IsOccupied && !p.IsReserved)
+                    .FirstOrDefaultAsync();
+
+                if (availableSpace == null)
+                {
+                    _logger.LogWarning("No available parking spaces found, creating an overflow space");
+                    
+                    // Create an overflow space if needed
+                    var overflowSpace = new ParkingSpace
+                    {
+                        SpaceNumber = $"OVF-{DateTime.Now:yyyyMMddHHmmss}",
+                        SpaceType = "Overflow",
+                        IsOccupied = false,
+                        HourlyRate = 5000M,
+                        IsReserved = false,
+                        Location = "Overflow"
+                    };
+                    
+                    await _context.ParkingSpaces.AddAsync(overflowSpace);
+                    await _context.SaveChangesAsync();
+                    
+                    availableSpace = overflowSpace;
+                    _logger.LogInformation($"Created overflow space: {overflowSpace.SpaceNumber}");
+                }
+
+                _logger.LogInformation($"Assigning space {availableSpace.SpaceNumber} to vehicle {vehicle.VehicleNumber}");
+                
+                // Mark space as occupied but update database separately from vehicle
+                availableSpace.IsOccupied = true;
+                availableSpace.CurrentVehicleId = null; // Don't set circular reference
+                
+                // Set vehicle parking space ID
+                vehicle.ParkingSpaceId = availableSpace.Id;
+                vehicle.EntryTime = DateTime.Now;
+
+                // Update space first to avoid circular reference issues
+                _context.ParkingSpaces.Update(availableSpace);
+                await _context.SaveChangesAsync();
+                
+                _logger.LogInformation($"Successfully marked space {availableSpace.SpaceNumber} as occupied");
+                
+                return availableSpace;
             }
-
-            availableSpace.IsOccupied = true;
-            availableSpace.CurrentVehicle = vehicle;
-            vehicle.ParkingSpace = availableSpace;
-            vehicle.EntryTime = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-            return availableSpace;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error assigning parking space for vehicle {vehicle.VehicleNumber}");
+                throw new InvalidOperationException($"Error assigning parking space: {ex.Message}", ex);
+            }
         }
 
         public async Task<decimal> CalculateFee(Vehicle vehicle)

@@ -60,13 +60,10 @@
                                             <input class="form-control" value="@Model.CreatedAt.ToString("dd/MM/yyyy HH:mm")" readonly />
                                         </div>
                                         
-                                        @if (Model.ModifiedAt.HasValue)
-                                        {
-                                            <div class="mb-3">
-                                                <label class="form-label">Terakhir Diubah</label>
-                                                <input class="form-control" value="@Model.ModifiedAt.Value.ToString("dd/MM/yyyy HH:mm")" readonly />
-                                            </div>
-                                        }
+                                        <div class="mb-3">
+                                            <label class="form-label">Terakhir Diubah</label>
+                                            <input class="form-control" value="@Model.ModifiedAt.ToString("dd/MM/yyyy HH:mm")" readonly />
+                                        </div>
                                     </div>
                                 </div>
                                 

@@ -1,0 +1,126 @@
+@model ParkIRC.Models.SiteSettings
+@{
+    ViewData["Title"] = "Pengaturan Aplikasi";
+}
+
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-12">
+            @if (TempData["Success"] != null)
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="fas fa-check-circle me-2"></i>@TempData["Success"]
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            }
+            
+            <div class="card shadow mb-4">
+                <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <i class="fas fa-cogs me-2"></i>Pengaturan Aplikasi
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="@Url.Action("UpdateApplicationSettings")" enctype="multipart/form-data">
+                        @Html.AntiForgeryToken()
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label class="form-label">Nama Aplikasi</label>
+                                    <input type="text" class="form-control" name="SiteName" 
+                                           value="@Model.SiteName" required>
+                                    <small class="text-muted">Nama aplikasi akan ditampilkan di header dan title browser</small>
+                                </div>
+
+                                <div class="form-group mb-3">
+                                    <label class="form-label">Logo</label>
+                                    @if (!string.IsNullOrEmpty(Model.LogoPath))
+                                    {
+                                        <div class="mb-2">
+                                            <img src="@Model.LogoPath" style="max-height: 50px" alt="Logo" />
+                                        </div>
+                                    }
+                                    <input type="file" class="form-control" name="logo" 
+                                           accept="image/png,image/jpeg">
+                                    <small class="text-muted">Format yang didukung: PNG, JPEG. Ukuran max: 2MB</small>
+                                </div>
+
+                                <div class="form-group mb-3">
+                                    <label class="form-label">Favicon</label>
+                                    @if (!string.IsNullOrEmpty(Model.FaviconPath))
+                                    {
+                                        <div class="mb-2">
+                                            <img src="@Model.FaviconPath" style="max-height: 32px" alt="Favicon" />
+                                        </div>
+                                    }
+                                    <input type="file" class="form-control" name="favicon" 
+                                           accept="image/x-icon,image/png">
+                                    <small class="text-muted">Format yang didukung: ICO, PNG. Ukuran disarankan: 32x32px</small>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-group mb-3">
+                                    <label class="form-label">Teks Footer</label>
+                                    <input type="text" class="form-control" name="FooterText" 
+                                           value="@Model.FooterText">
+                                    <small class="text-muted">Teks yang ditampilkan di bagian bawah halaman</small>
+                                </div>
+
+                                <div class="form-group mb-3">
+                                    <label class="form-label">Warna Tema</label>
+                                    <div class="input-group">
+                                        <input type="color" class="form-control form-control-color" name="ThemeColor" 
+                                               value="@Model.ThemeColor" title="Pilih warna tema">
+                                        <input type="text" class="form-control" value="@Model.ThemeColor" 
+                                               readonly id="colorHexValue">
+                                    </div>
+                                    <small class="text-muted">Warna utama untuk tema aplikasi</small>
+                                </div>
+
+                                <div class="form-check form-switch mb-3">
+                                    <input type="checkbox" class="form-check-input" name="ShowLogo" id="showLogo"
+                                           value="true" @(Model.ShowLogo == true ? "checked" : "")>
+                                    <label class="form-check-label" for="showLogo">Tampilkan Logo</label>
+                                    <div><small class="text-muted">Jika dinonaktifkan, hanya nama aplikasi yang ditampilkan</small></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-1"></i> Simpan Pengaturan
+                            </button>
+                            <a href="@Url.Action("Index", "Management")" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left me-1"></i> Kembali
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            // Update hex value when color picker changes
+            $('input[name="ThemeColor"]').on('input', function() {
+                $('#colorHexValue').val($(this).val());
+            });
+            
+            // Form validation
+            $('form').on('submit', function(e) {
+                const siteName = $('input[name="SiteName"]').val();
+                if (!siteName || siteName.trim() === '') {
+                    e.preventDefault();
+                    toastr.error('Nama aplikasi tidak boleh kosong');
+                    return false;
+                }
+                return true;
+            });
+        });
+    </script>
+} 

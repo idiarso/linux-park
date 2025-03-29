@@ -14,5 +14,7 @@ namespace ParkIRC.Services
         Task<bool> PrintTicket(string ticketNumber, string entryTime);
         Task<bool> PrintReceipt(string ticketNumber, string exitTime, decimal amount);
         Task<bool> PrintTicketWithBarcode(string ticketNumber, DateTime entryTime, string barcodeImagePath);
+        Task<bool> PrintTicket(string ticketContent);
+        Task<bool> TestPrinter();
     }
 } 

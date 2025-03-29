@@ -12,10 +12,16 @@ namespace ParkIRC.Models
         [Required(ErrorMessage = "Jenis kendaraan wajib dipilih")]
         public string VehicleType { get; set; } = string.Empty;
 
+        // Optional fields - not required for basic ticket-based entry
         public string? DriverName { get; set; }
 
         public string? PhoneNumber { get; set; }
 
         public string? EntryImagePath { get; set; }
+        
+        // Ticket data properties
+        public string? TicketNumber { get; set; }
+        
+        public DateTime EntryTime { get; set; } = DateTime.Now;
     }
 }

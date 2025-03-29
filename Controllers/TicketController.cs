@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Authorization;
 using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace ParkIRC.Controllers
 {
@@ -24,9 +26,17 @@ namespace ParkIRC.Controllers
             _logger = logger;
         }
 
-        public IActionResult PrintTicket()
+        public async Task<IActionResult> PrintTicket()
         {
-            // This is a page to show the ticket printing interface
+            // Get list of active vehicles for dropdown
+            var activeVehicles = await _context.Vehicles
+                .Where(v => v.IsParked)
+                .OrderBy(v => v.VehicleNumber)
+                .Select(v => new { v.VehicleNumber, v.VehicleType })
+                .ToListAsync();
+            
+            ViewBag.ActiveVehicles = activeVehicles;
+            
             return View();
         }
 
@@ -36,56 +46,96 @@ namespace ParkIRC.Controllers
         {
             if (string.IsNullOrEmpty(vehicleNumber))
             {
-                return BadRequest("Vehicle number is required");
+                return Json(new { success = false, message = "Nomor kendaraan wajib diisi" });
             }
-
-            // Find the latest transaction for this vehicle
-            var transaction = await _context.ParkingTransactions
-                .Include(t => t.Vehicle)
-                .Include(t => t.ParkingSpace)
-                .Where(t => t.Vehicle != null && t.Vehicle.VehicleNumber == vehicleNumber)
-                .OrderByDescending(t => t.EntryTime)
-                .FirstOrDefaultAsync();
-
-            if (transaction == null)
-            {
-                return NotFound("No transaction found for this vehicle");
-            }
-            
-            if (transaction.Vehicle == null)
-            {
-                return NotFound("Vehicle information not found for this transaction");
-            }
-
-            // Create a ticket model
-            var ticket = new ParkingTicket
-            {
-                TicketNumber = transaction.TransactionNumber,
-                VehicleNumber = vehicleNumber,
-                EntryTime = transaction.EntryTime,
-                ParkingSpaceNumber = transaction.ParkingSpace?.SpaceNumber ?? "Unknown",
-                VehicleType = transaction.Vehicle.VehicleType ?? "Unknown",
-                // Add additional required properties for database validation
-                BarcodeData = transaction.TransactionNumber,
-                IssueTime = DateTime.Now,
-                ShiftId = 1 // Default value, you might want to get the current shift
-            };
 
             try
             {
+                // Find the vehicle
+                var vehicle = await _context.Vehicles
+                    .Where(v => v.VehicleNumber == vehicleNumber && v.IsParked)
+                    .Include(v => v.ParkingSpace)
+                    .FirstOrDefaultAsync();
+
+                if (vehicle == null)
+                {
+                    _logger.LogWarning("Vehicle not found or not parked: {VehicleNumber}", vehicleNumber);
+                    return Json(new { success = false, message = "Kendaraan tidak ditemukan atau tidak sedang parkir" });
+                }
+
+                // Find the latest transaction for this vehicle
+                var transaction = await _context.ParkingTransactions
+                    .Where(t => t.Vehicle != null && t.Vehicle.Id == vehicle.Id && t.ExitTime == null)
+                    .OrderByDescending(t => t.EntryTime)
+                    .FirstOrDefaultAsync();
+
+                if (transaction == null)
+                {
+                    _logger.LogWarning("Active transaction not found for vehicle: {VehicleNumber}", vehicleNumber);
+                    return Json(new { success = false, message = "Transaksi aktif tidak ditemukan untuk kendaraan ini" });
+                }
+
+                // Create a ticket model
+                var ticket = new ParkingTicket
+                {
+                    TicketNumber = transaction.TicketNumber ?? transaction.TransactionNumber,
+                    VehicleNumber = vehicle.VehicleNumber,
+                    EntryTime = transaction.EntryTime,
+                    ParkingSpaceNumber = vehicle.ParkingSpace?.SpaceNumber ?? "General",
+                    VehicleType = vehicle.VehicleType ?? "Unknown",
+                    // Add additional required properties for database validation
+                    BarcodeData = transaction.TransactionNumber,
+                    IssueTime = DateTime.Now,
+                    ShiftId = 1 // Default value
+                };
+
+                // Format ticket content
+                var ticketContent = $"TIKET PARKIR\n==============\nNo. Tiket: {ticket.TicketNumber}\nNo. Kendaraan: {ticket.VehicleNumber}\nWaktu Masuk: {ticket.EntryTime:yyyy-MM-dd HH:mm:ss}\nTipe Kendaraan: {ticket.VehicleType}\nLokasi: {ticket.ParkingSpaceNumber}\n\n";
+                
                 // Print ticket
-                var success = await _printerService.PrintTicket(ticket.TicketNumber, ticket.EntryTime.ToString("dd/MM/yyyy HH:mm:ss"));
+                var success = await _printerService.PrintTicket(ticketContent);
                 if (!success)
                 {
                     _logger.LogError("Failed to print ticket {TicketNumber}", ticket.TicketNumber);
-                    return StatusCode(500, "Failed to print ticket");
+                    return Json(new { success = false, message = "Gagal mencetak tiket. Periksa printer Anda." });
                 }
                 
-                return Json(new { success = true, message = "Tiket berhasil dicetak" });
+                _logger.LogInformation("Ticket printed successfully: {TicketNumber} for vehicle {VehicleNumber}", 
+                    ticket.TicketNumber, ticket.VehicleNumber);
+                
+                return Json(new { 
+                    success = true, 
+                    message = "Tiket berhasil dicetak",
+                    ticketNumber = ticket.TicketNumber,
+                    vehicleNumber = ticket.VehicleNumber,
+                    entryTime = ticket.EntryTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                    parkingSpace = ticket.ParkingSpaceNumber
+                });
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error printing ticket for vehicle {VehicleNumber}", vehicleNumber);
                 return Json(new { success = false, message = $"Error: {ex.Message}" });
+            }
+        }
+        
+        [HttpGet]
+        public async Task<IActionResult> GetActiveVehicles()
+        {
+            try
+            {
+                var vehicles = await _context.Vehicles
+                    .Where(v => v.IsParked)
+                    .OrderBy(v => v.VehicleNumber)
+                    .Select(v => new { v.VehicleNumber, v.VehicleType })
+                    .ToListAsync();
+                
+                return Json(vehicles);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting active vehicles");
+                return Json(new List<object>());
             }
         }
     }

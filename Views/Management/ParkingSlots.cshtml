@@ -8,7 +8,7 @@
     <div class="card shadow mb-4">
         <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
             <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-th me-2"></i>Kelola Slot Parkir</h6>
-            <a href="@Url.Action("CreateParkingSlot")" class="btn btn-primary btn-sm">
+            <a href="/Management/CreateParkingSlot" class="btn btn-primary btn-sm" id="createParkingSlotBtn">
                 <i class="fas fa-plus me-1"></i> Tambah Slot Baru
             </a>
         </div>
@@ -100,6 +100,20 @@
                     url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/id.json'
                 }
             });
+            
+            // Ensure the Create button works correctly
+            $('#createParkingSlotBtn').on('click', function(e) {
+                e.preventDefault();
+                window.location.href = '/Management/CreateParkingSlot';
+            });
+            
+            // Add a direct button if the main one doesn't appear
+            if ($('#createParkingSlotBtn:visible').length === 0) {
+                $('.card-header').append(
+                    '<a href="/Management/CreateParkingSlot" class="btn btn-primary btn-sm" style="display:inline-block !important; visibility:visible !important; opacity:1 !important;">' +
+                    '<i class="fas fa-plus me-1"></i> Tambah Slot Baru</a>'
+                );
+            }
         });
     </script>
 } 

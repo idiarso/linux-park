@@ -3,79 +3,107 @@
 @{
     ViewData["Title"] = "Riwayat Parkir";
     string currentVehicleType = ViewData["VehicleType"] as string ?? "";
+    var parkedVehicles = ViewData["ParkedVehicles"] as int? ?? 0;
 }
 
-<div class="container-fluid">
-    <div class="card shadow mb-4">
+@section Styles {
+    <style>
+        /* Responsive styles for History page */
+        @@media (max-width: 768px) {
+            .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+            .card-header { padding: 0.75rem 1rem; }
+            .card-body { padding: 0.75rem; }
+            .dataTables_wrapper .dataTables_length, 
+            .dataTables_wrapper .dataTables_filter,
+            .dataTables_wrapper .dataTables_info,
+            .dataTables_wrapper .dataTables_paginate { 
+                font-size: 0.85rem;
+                margin-bottom: 0.5rem;
+            }
+            .table { font-size: 0.85rem; }
+            .table td, .table th { padding: 0.5rem; }
+        }
+        
+        @@media (max-width: 576px) {
+            .card-header { flex-direction: column; align-items: start; }
+            .card-header .d-flex.gap-2 { margin-top: 0.5rem; width: 100%; justify-content: space-between; }
+            .dataTables_wrapper .dataTables_length, 
+            .dataTables_wrapper .dataTables_filter { text-align: left; width: 100%; }
+            .dataTables_wrapper .dataTables_filter input { width: 100%; margin-left: 0; margin-top: 0.25rem; }
+            .dataTables_wrapper .dataTables_paginate .paginate_button { padding: 0.25rem 0.5rem; }
+        }
+        
+        /* Make DataTables responsive */
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+    </style>
+}
+
+<div class="container-fluid py-3">
+    <div class="card shadow mb-3">
         <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
             <h6 class="m-0 font-weight-bold text-primary"><i class="fas fa-history me-2"></i>Riwayat Parkir</h6>
-            <a href="@Url.Action("Export")" class="btn btn-success btn-sm">
-                <i class="fas fa-file-export me-1"></i> Export CSV
-            </a>
+            <div class="d-flex gap-2">
+                <span class="text-info d-none d-sm-block">
+                    <i class="fas fa-car me-1"></i> Kendaraan terparkir: @parkedVehicles
+                </span>
+                <a href="@Url.Action("Export")" class="btn btn-success btn-sm">
+                    <i class="fas fa-file-export me-1"></i> Export CSV
+                </a>
+            </div>
         </div>
         <div class="card-body">
             <!-- Filter Form -->
-            <form method="get" class="mb-4">
-                <div class="row">
-                    <div class="col-md-3 mb-3">
-                        <label for="searchString">Nomor Kendaraan</label>
-                        <input type="text" class="form-control" id="searchString" name="searchString" value="@ViewData["CurrentFilter"]">
+            <form method="get" class="mb-3">
+                <div class="row g-2">
+                    <div class="col-md-3 col-sm-6">
+                        <label for="searchString" class="form-label small">Nomor Kendaraan</label>
+                        <input type="text" class="form-control form-control-sm" id="searchString" name="searchString" value="@ViewData["CurrentFilter"]" placeholder="Cari nomor kendaraan...">
                     </div>
-                    <div class="col-md-2 mb-3">
-                        <label for="startDate">Tanggal Mulai</label>
-                        <input type="date" class="form-control" id="startDate" name="startDate" value="@(ViewData["StartDate"] != null ? Convert.ToDateTime(ViewData["StartDate"]).ToString("yyyy-MM-dd") : "")">
+                    <div class="col-md-2 col-sm-6">
+                        <label for="startDate" class="form-label small">Tanggal Mulai</label>
+                        <input type="date" class="form-control form-control-sm" id="startDate" name="startDate" value="@(ViewData["StartDate"] != null ? Convert.ToDateTime(ViewData["StartDate"]).ToString("yyyy-MM-dd") : "")">
                     </div>
-                    <div class="col-md-2 mb-3">
-                        <label for="endDate">Tanggal Akhir</label>
-                        <input type="date" class="form-control" id="endDate" name="endDate" value="@(ViewData["EndDate"] != null ? Convert.ToDateTime(ViewData["EndDate"]).ToString("yyyy-MM-dd") : "")">
+                    <div class="col-md-2 col-sm-6">
+                        <label for="endDate" class="form-label small">Tanggal Akhir</label>
+                        <input type="date" class="form-control form-control-sm" id="endDate" name="endDate" value="@(ViewData["EndDate"] != null ? Convert.ToDateTime(ViewData["EndDate"]).ToString("yyyy-MM-dd") : "")">
                     </div>
-                    <div class="col-md-3 mb-3">
-                        <label for="vehicleType">Jenis Kendaraan</label>
-                        <select class="form-control" id="vehicleType" name="vehicleType">
+                    <div class="col-md-3 col-sm-6">
+                        <label for="vehicleType" class="form-label small">Jenis Kendaraan</label>
+                        <select class="form-control form-control-sm" id="vehicleType" name="vehicleType">
                             <option value="">Semua Jenis</option>
-                            @if (currentVehicleType == "car")
-                            {
-                                <option value="car" selected>Mobil</option>
-                            }
-                            else
-                            {
-                                <option value="car">Mobil</option>
-                            }
-                            
-                            @if (currentVehicleType == "motorcycle")
-                            {
-                                <option value="motorcycle" selected>Motor</option>
-                            }
-                            else
-                            {
-                                <option value="motorcycle">Motor</option>
-                            }
-                            
-                            @if (currentVehicleType == "truck")
-                            {
-                                <option value="truck" selected>Truk</option>
-                            }
-                            else
-                            {
-                                <option value="truck">Truk</option>
-                            }
+                            <option value="car" selected="@(currentVehicleType == "car")">Mobil</option>
+                            <option value="motorcycle" selected="@(currentVehicleType == "motorcycle")">Motor</option>
+                            <option value="truck" selected="@(currentVehicleType == "truck")">Truk</option>
                         </select>
                     </div>
-                    <div class="col-md-2 mb-3 d-flex align-items-end">
-                        <button type="submit" class="btn btn-primary w-100">
+                    <div class="col-md-2 col-sm-12 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary btn-sm w-100">
                             <i class="fas fa-search me-1"></i> Filter
                         </button>
                     </div>
                 </div>
             </form>
 
+            @if (!Model.Any() && parkedVehicles > 0)
+            {
+                <div class="alert alert-warning py-2">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Peringatan:</strong> Terdapat @parkedVehicles kendaraan terparkir di database, tetapi tidak ada data riwayat yang ditampilkan. 
+                    Mungkin terdapat masalah dengan relasi data.
+                </div>
+            }
+
             <div class="table-responsive">
-                <table class="table table-bordered" id="historyTable" width="100%" cellspacing="0">
+                <table class="table table-bordered table-striped table-hover" id="historyTable" width="100%" cellspacing="0">
                     <thead>
                         <tr>
-                            <th>Nomor Kendaraan</th>
-                            <th>Waktu Masuk</th>
-                            <th>Waktu Keluar</th>
+                            <th>Nomor</th>
+                            <th>Masuk</th>
+                            <th>Keluar</th>
                             <th>Durasi</th>
                             <th>Biaya</th>
                             <th>Status</th>
@@ -86,11 +114,11 @@
                         {
                             <tr>
                                 <td>@item.VehicleNumber</td>
-                                <td>@item.EntryTime.ToString("dd/MM/yyyy HH:mm:ss")</td>
+                                <td>@item.EntryTime.ToString("dd/MM/yy HH:mm")</td>
                                 <td>
                                     @if (item.ExitTime.HasValue)
                                     {
-                                        @item.ExitTime.Value.ToString("dd/MM/yyyy HH:mm:ss")
+                                        @item.ExitTime.Value.ToString("dd/MM/yy HH:mm")
                                     }
                                     else
                                     {
@@ -115,7 +143,7 @@
                                     }
                                     else
                                     {
-                                        <span class="badge bg-warning text-dark">Dalam Parkir</span>
+                                        <span class="badge bg-warning text-dark">Parkir</span>
                                     }
                                 </td>
                             </tr>
@@ -135,14 +163,38 @@
                 order: [[1, 'desc']], // Sort by entry time (descending)
                 language: {
                     url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/id.json'
-                }
+                },
+                responsive: true,
+                dom: "<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'f>>" +
+                     "<'row'<'col-sm-12'tr>>" +
+                     "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+                lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "Semua"]],
+                pageLength: 10
             });
+            
+            // Adjust table for small screens
+            function adjustTableForScreenSize() {
+                const width = window.innerWidth;
+                const table = $('#historyTable').DataTable();
+                
+                if (width < 576) {
+                    // For very small screens, minimize the UI
+                    $('.dataTables_length select').addClass('form-select-sm');
+                    $('.dataTables_filter input').addClass('form-control-sm');
+                }
+            }
+            
+            // Call once on page load
+            adjustTableForScreenSize();
+            
+            // Call on window resize
+            $(window).resize(adjustTableForScreenSize);
         });
 
         // SignalR Connection
         const connection = new signalR.HubConnectionBuilder()
             .withUrl("/parkingHub")
-            .withAutomaticReconnect()
+            .withAutomaticReconnect([0, 2000, 5000, 10000, 30000]) // Retry with backoff
             .build();
 
         connection.start().catch(err => console.error(err));
@@ -150,16 +202,11 @@
         // Notify when history data is updated
         connection.on("NotifyHistoryUpdate", function(historyData) {
             console.log(`History data updated: ${JSON.stringify(historyData)}`);
-            // Additional UI update logic here
+            toastr.info('Data riwayat telah diperbarui', 'Perbarui Halaman');
+            // Add a reload button to the notification
+            $('.toast-info').last().click(function() {
+                location.reload();
+            });
         });
-
-        // Example function to notify history update
-        async function notifyHistoryUpdate(historyData) {
-            try {
-                await connection.invoke("NotifyHistoryUpdate", historyData);
-            } catch (err) {
-                console.error(err);
-            }
-        }
     </script>
 }

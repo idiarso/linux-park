@@ -1,90 +1,160 @@
+@model ParkIRC.Models.ParkingTicket
 @{
     ViewData["Title"] = "Print Ticket";
 }
 
 <div class="container mt-4">
-    <div class="card shadow-sm">
-        <div class="card-header bg-primary text-white">
-            <h3 class="mb-0">Print Parking Ticket</h3>
-        </div>
-        <div class="card-body">
-            <form id="printTicketForm">
-                <div class="form-group">
-                    <label for="vehicleNumber">Enter Vehicle Number</label>
-                    <input type="text" class="form-control form-control-lg" id="vehicleNumber" name="vehicleNumber" placeholder="e.g., AB1234CD" required>
+    <div class="row">
+        <div class="col-md-6 offset-md-3">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0">Cetak Ulang Tiket Parkir</h4>
                 </div>
-                <div class="d-grid gap-2 mt-4">
-                    <button type="submit" class="btn btn-primary btn-lg">Print Ticket</button>
-                    <a href="@Url.Action("QuickAccess", "Parking")" class="btn btn-outline-secondary">Back to Dashboard</a>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> Pastikan printer terhubung dan siap untuk mencetak tiket.
+                    </div>
+
+                    <form id="printTicketForm" method="post" class="needs-validation" novalidate>
+                        @Html.AntiForgeryToken()
+                        <div class="form-group mb-3">
+                            <label for="vehicleNumber" class="form-label">Nomor Kendaraan</label>
+                            <div class="input-group">
+                                <select id="vehicleNumber" name="vehicleNumber" class="form-select">
+                                    <option value="">-- Pilih Kendaraan --</option>
+                                    @if (ViewBag.ActiveVehicles != null)
+                                    {
+                                        foreach (var vehicle in ViewBag.ActiveVehicles)
+                                        {
+                                            <option value="@vehicle.VehicleNumber">@vehicle.VehicleNumber (@vehicle.VehicleType)</option>
+                                        }
+                                    }
+                                </select>
+                                <button type="button" id="refreshVehicles" class="btn btn-outline-secondary">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </div>
+                            <div class="invalid-feedback">
+                                Silakan pilih nomor kendaraan
+                            </div>
+                        </div>
+
+                        <div class="form-group mb-3">
+                            <label for="manualVehicleNumber" class="form-label">Atau Masukkan Nomor Kendaraan</label>
+                            <input type="text" id="manualVehicleNumber" class="form-control" placeholder="Contoh: B1234CD">
+                            <small class="text-muted">Gunakan ini jika kendaraan tidak ada di daftar dropdown</small>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" id="printBtn" class="btn btn-primary">
+                                <i class="fas fa-print"></i> Cetak Tiket
+                            </button>
+                        </div>
+                    </form>
+
+                    <div id="resultMessage" class="mt-3" style="display: none;">
+                    </div>
+
+                    <div id="ticketPreview" class="mt-4 p-3 bg-light border rounded" style="display: none; font-family: monospace;">
+                        <h5 class="text-center">Preview Tiket</h5>
+                        <div class="border-bottom mb-2"></div>
+                        <div id="ticketContent"></div>
+                    </div>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
-    
-    <div class="alert alert-info mt-4">
-        <h5>Instructions:</h5>
-        <p>1. Enter the vehicle's license plate number</p>
-        <p>2. Click "Print Ticket" to print the parking ticket</p>
-        <p>3. Make sure the printer is connected and ready</p>
-    </div>
-    
-    <!-- Result message will appear here -->
-    <div id="result" class="mt-3" style="display: none;"></div>
 </div>
 
 @section Scripts {
     <script>
-        $(function() {
-            $('#printTicketForm').submit(function(e) {
-                e.preventDefault();
-                
-                var vehicleNumber = $('#vehicleNumber').val();
-                if (!vehicleNumber) {
-                    showMessage('error', 'Please enter a vehicle number');
-                    return;
+        $(document).ready(function () {
+            // Handle manual vehicle number input
+            $('#manualVehicleNumber').on('input', function() {
+                if ($(this).val()) {
+                    $('#vehicleNumber').val('');
                 }
-                
-                // Get the anti-forgery token
-                var token = $('input[name="__RequestVerificationToken"]').val();
-                
-                // Show loading indicator
-                showMessage('info', 'Processing your request...');
-                
-                // Send the request to print the ticket
+            });
+
+            // Handle dropdown selection
+            $('#vehicleNumber').change(function() {
+                if ($(this).val()) {
+                    $('#manualVehicleNumber').val('');
+                }
+            });
+
+            // Refresh vehicles list
+            $('#refreshVehicles').click(function() {
                 $.ajax({
-                    url: '@Url.Action("PrintTicket", "Ticket")',
-                    type: 'POST',
-                    data: { 
-                        vehicleNumber: vehicleNumber,
-                        __RequestVerificationToken: token
+                    url: '@Url.Action("GetActiveVehicles", "Ticket")',
+                    type: 'GET',
+                    dataType: 'json',
+                    beforeSend: function() {
+                        $('#refreshVehicles').html('<i class="fas fa-spinner fa-spin"></i>');
                     },
-                    success: function(response) {
-                        if (response.success) {
-                            showMessage('success', response.message);
-                        } else {
-                            showMessage('error', response.message);
-                        }
+                    success: function(data) {
+                        var dropdown = $('#vehicleNumber');
+                        dropdown.empty();
+                        dropdown.append('<option value="">-- Pilih Kendaraan --</option>');
+                        
+                        $.each(data, function(i, vehicle) {
+                            dropdown.append($('<option></option>')
+                                .attr('value', vehicle.vehicleNumber)
+                                .text(vehicle.vehicleNumber + ' (' + vehicle.vehicleType + ')'));
+                        });
                     },
-                    error: function(xhr) {
-                        showMessage('error', 'An error occurred: ' + xhr.responseText);
+                    complete: function() {
+                        $('#refreshVehicles').html('<i class="fas fa-sync-alt"></i>');
                     }
                 });
             });
-            
-            function showMessage(type, message) {
-                var resultDiv = $('#result');
-                resultDiv.removeClass('alert-success alert-danger alert-info');
+
+            // Submit form
+            $('#printTicketForm').submit(function (e) {
+                e.preventDefault();
                 
-                if (type === 'success') {
-                    resultDiv.addClass('alert alert-success');
-                } else if (type === 'error') {
-                    resultDiv.addClass('alert alert-danger');
-                } else {
-                    resultDiv.addClass('alert alert-info');
+                // Get vehicle number from dropdown or manual input
+                var vehicleNumber = $('#vehicleNumber').val() || $('#manualVehicleNumber').val();
+                
+                if (!vehicleNumber) {
+                    $('#resultMessage').html('<div class="alert alert-danger">Nomor kendaraan wajib diisi</div>').show();
+                    return false;
                 }
                 
-                resultDiv.html(message).show();
-            }
+                $.ajax({
+                    url: '@Url.Action("PrintTicket", "Ticket")',
+                    type: 'POST',
+                    data: { vehicleNumber: vehicleNumber, __RequestVerificationToken: $('input[name="__RequestVerificationToken"]').val() },
+                    dataType: 'json',
+                    beforeSend: function() {
+                        $('#printBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Mencetak...');
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            $('#resultMessage').html('<div class="alert alert-success">' + response.message + '</div>').show();
+                            
+                            // Show ticket preview
+                            var ticketHtml = 
+                                '<p><strong>No. Tiket:</strong> ' + response.ticketNumber + '</p>' +
+                                '<p><strong>No. Kendaraan:</strong> ' + response.vehicleNumber + '</p>' +
+                                '<p><strong>Waktu Masuk:</strong> ' + response.entryTime + '</p>' +
+                                '<p><strong>Lokasi:</strong> ' + response.parkingSpace + '</p>';
+                            
+                            $('#ticketContent').html(ticketHtml);
+                            $('#ticketPreview').show();
+                        } else {
+                            $('#resultMessage').html('<div class="alert alert-danger">' + response.message + '</div>').show();
+                            $('#ticketPreview').hide();
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        $('#resultMessage').html('<div class="alert alert-danger">Terjadi kesalahan: ' + error + '</div>').show();
+                    },
+                    complete: function() {
+                        $('#printBtn').prop('disabled', false).html('<i class="fas fa-print"></i> Cetak Tiket');
+                    }
+                });
+            });
         });
     </script>
 } 

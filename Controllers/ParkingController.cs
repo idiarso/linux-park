@@ -195,71 +195,141 @@ namespace ParkIRC.Controllers
         {
             if (!ModelState.IsValid)
             {
-                return Json(new { success = false, message = "Form tidak valid" });
+                var errors = string.Join("; ", ModelState.Values
+                    .SelectMany(v => v.Errors)
+                    .Select(e => e.ErrorMessage));
+                _logger.LogError("Invalid model state: {Errors}", errors);
+                return Json(new { success = false, message = $"Form tidak valid: {errors}" });
             }
 
             try
             {
+                _logger.LogInformation("Processing vehicle entry: {VehicleNumber}, Type: {VehicleType}",
+                    model.VehicleNumber, model.VehicleType);
+
                 // Check if vehicle is already parked
                 var existingVehicle = await _context.Vehicles
                     .FirstOrDefaultAsync(v => v.VehicleNumber == model.VehicleNumber && v.IsParked);
 
                 if (existingVehicle != null)
                 {
+                    _logger.LogWarning("Vehicle already parked: {VehicleNumber}", model.VehicleNumber);
                     return Json(new { success = false, message = "Kendaraan sudah terparkir" });
                 }
 
+                // Generate ticket number
+                string ticketNumber = GenerateTicketNumber();
+                
+                // Create vehicle record with minimal information
                 var vehicle = new Vehicle
                 {
                     VehicleNumber = model.VehicleNumber,
                     VehicleType = model.VehicleType,
                     DriverName = model.DriverName,
                     PhoneNumber = model.PhoneNumber,
+                    EntryImagePath = model.EntryImagePath,
                     IsParked = true,
-                    EntryTime = DateTime.UtcNow,
-                    Status = "Active"
+                    EntryTime = DateTime.Now,
+                    Status = "Active",
+                    TicketNumber = ticketNumber,
+                    CreatedBy = User.Identity?.Name ?? "System",
+                    PlateNumber = model.VehicleNumber,
+                    EntryGateId = "MAIN",
+                    ExternalSystemId = $"WEB-{DateTime.Now:yyyyMMddHHmmss}"
                 };
 
-                // Assign parking space
-                var parkingSpace = await _parkingService.AssignParkingSpace(vehicle);
-                if (parkingSpace == null)
-                {
-                    return Json(new { success = false, message = "Tidak ada tempat parkir tersedia" });
-                }
+                _logger.LogInformation("Created vehicle object with ticket: {TicketNumber}", ticketNumber);
 
-                vehicle.ParkingSpaceId = parkingSpace.Id;
-                vehicle.ParkingSpace = parkingSpace;
+                // Save vehicle to get an ID before assigning a space
+                await _context.Vehicles.AddAsync(vehicle);
+                await _context.SaveChangesAsync();
+                
+                _logger.LogInformation("Saved vehicle with ID: {VehicleId}", vehicle.Id);
+
+                // Assign parking space
+                try {
+                    var parkingSpace = await _parkingService.AssignParkingSpace(vehicle);
+                    if (parkingSpace == null)
+                    {
+                        _logger.LogError("No parking space available");
+                        return Json(new { success = false, message = "Tidak ada tempat parkir tersedia" });
+                    }
+
+                    _logger.LogInformation("Assigned parking space {SpaceId} to vehicle {VehicleNumber}", 
+                        parkingSpace.Id, vehicle.VehicleNumber);
+                }
+                catch (Exception spaceEx) {
+                    _logger.LogError(spaceEx, "Error assigning parking space");
+                    return Json(new { success = false, message = $"Error saat menetapkan tempat parkir: {spaceEx.Message}" });
+                }
 
                 // Create parking transaction
                 var transaction = new ParkingTransaction
                 {
-                    Vehicle = vehicle,
+                    VehicleId = vehicle.Id,
                     EntryTime = DateTime.Now,
-                    TransactionNumber = GenerateTransactionNumber(),
-                    Status = "Active"
+                    TransactionNumber = ticketNumber,
+                    TicketNumber = ticketNumber,
+                    Status = "Active",
+                    PaymentMethod = "Cash",
+                    PaymentStatus = "Pending",
+                    VehicleNumber = vehicle.VehicleNumber,
+                    VehicleType = vehicle.VehicleType,
+                    EntryPoint = "WEB",
+                    IsManualEntry = true
                 };
 
-                // Save changes
-                await _context.Vehicles.AddAsync(vehicle);
-                await _context.ParkingTransactions.AddAsync(transaction);
-                await _context.SaveChangesAsync();
+                _logger.LogInformation("Created transaction: {TransactionNumber}", transaction.TransactionNumber);
 
-                // Update dashboard
-                await _hubContext.Clients.All.SendAsync("UpdateDashboard");
+                // Print ticket
+                try {
+                    var ticketContent = $"TIKET PARKIR\n==============\nNo. Tiket: {ticketNumber}\nNo. Kendaraan: {vehicle.VehicleNumber}\nWaktu Masuk: {vehicle.EntryTime:yyyy-MM-dd HH:mm:ss}\nTipe Kendaraan: {vehicle.VehicleType}\nLokasi: {vehicle.ParkingSpace?.SpaceNumber ?? "General"}\n\n";
+                    
+                    _printService.PrintTicket(ticketContent);
+                    
+                    _logger.LogInformation("Ticket printed: {TicketNumber}", ticketNumber);
+                }
+                catch (Exception printEx) {
+                    _logger.LogError(printEx, "Error printing ticket");
+                    // Continue even if printing fails - don't abort the entry process
+                }
 
-                // Initialize hardware if not already initialized
-                InitializeHardware();
+                // Save transaction
+                try {
+                    await _context.ParkingTransactions.AddAsync(transaction);
+                    await _context.SaveChangesAsync();
+                    
+                    _logger.LogInformation("Database save completed for transaction {TransactionNumber}.", transaction.TransactionNumber);
 
-                // Use hardware manager
-                await _hardwareManager.OpenGate("ENTRY");
+                    // Update dashboard
+                    await _hubContext.Clients.All.SendAsync("UpdateDashboard");
 
-                return Json(new { success = true, message = "Kendaraan berhasil dicatat" });
+                    _logger.LogInformation("Vehicle entry process completed successfully for {VehicleNumber}", 
+                        vehicle.VehicleNumber);
+                    
+                    return Json(new { 
+                        success = true, 
+                        message = "Kendaraan berhasil masuk", 
+                        ticketNumber = ticketNumber,
+                        entryTime = vehicle.EntryTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                        parkingSpace = vehicle.ParkingSpace?.SpaceNumber ?? "General" 
+                    });
+                }
+                catch (Exception dbEx) {
+                    _logger.LogError(dbEx, "Database error saving transaction");
+                    return Json(new { success = false, message = $"Error database: {dbEx.Message}" });
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error processing vehicle entry");
-                return Json(new { success = false, message = "Terjadi kesalahan saat mencatat kendaraan" });
+                _logger.LogError(ex, "Unexpected error in VehicleEntry");
+                return Json(new { success = false, message = $"Terjadi kesalahan: {ex.Message}" });
             }
+        }
+        
+        private string GenerateTicketNumber()
+        {
+            return $"PKR{DateTime.Now:yyMMddHHmmss}";
         }
 
         private async Task<ParkingSpace?> FindOptimalParkingSpace(string vehicleType)
@@ -323,101 +393,115 @@ namespace ParkIRC.Controllers
                 // Normalize vehicle number format
                 entryModel.VehicleNumber = entryModel.VehicleNumber.ToUpper().Trim();
                 
-                // Check vehicle format separately
-                var vehicleNumberRegex = new System.Text.RegularExpressions.Regex(@"^[A-Z]{1,2}\s\d{1,4}\s[A-Z]{1,3}$");
-                if (!vehicleNumberRegex.IsMatch(entryModel.VehicleNumber))
-                {
-                    _logger.LogWarning("Invalid vehicle number format: {VehicleNumber}", entryModel.VehicleNumber);
-                    return BadRequest(new { error = "Format nomor kendaraan tidak valid. Contoh: B 1234 ABC" });
-                }
-
-                // Check if vehicle already exists and is parked
+                // Check if vehicle is already parked
                 var existingVehicle = await _context.Vehicles
-                    .Include(v => v.ParkingSpace)
-                    .FirstOrDefaultAsync(v => v.VehicleNumber == entryModel.VehicleNumber);
-
-                if (existingVehicle != null && existingVehicle.IsParked)
+                    .FirstOrDefaultAsync(v => v.VehicleNumber == entryModel.VehicleNumber && v.IsParked);
+                    
+                if (existingVehicle != null)
                 {
-                    _logger.LogWarning("Vehicle {VehicleNumber} is already parked", entryModel.VehicleNumber);
-                    return BadRequest(new { error = "Kendaraan sudah terparkir" });
+                    _logger.LogWarning("Vehicle already parked: {VehicleNumber}", entryModel.VehicleNumber);
+                    return BadRequest(new { error = $"Kendaraan {entryModel.VehicleNumber} sudah terparkir" });
                 }
-
-                // Find optimal parking space automatically
-                var optimalSpace = await FindOptimalParkingSpace(entryModel.VehicleType);
-                if (optimalSpace == null)
+                
+                // Generate ticket number
+                string ticketNumber = GenerateTicketNumber();
+                
+                // Create new vehicle
+                var vehicle = new Vehicle
                 {
-                    _logger.LogWarning("No available parking space for vehicle type: {VehicleType}", entryModel.VehicleType);
-                    return BadRequest(new { error = $"Tidak ada ruang parkir tersedia untuk kendaraan tipe {GetVehicleTypeName(entryModel.VehicleType)}" });
-                }
+                    VehicleNumber = entryModel.VehicleNumber,
+                    VehicleType = entryModel.VehicleType,
+                    DriverName = entryModel.DriverName,
+                    PhoneNumber = entryModel.PhoneNumber,
+                    IsParked = true,
+                    EntryTime = DateTime.Now,
+                    EntryImagePath = entryModel.EntryImagePath,
+                    CreatedBy = User.Identity?.Name ?? "System",
+                    TicketNumber = ticketNumber,
+                    Status = "Active",
+                    // Set PlateNumber equal to VehicleNumber
+                    PlateNumber = entryModel.VehicleNumber
+                };
+                
+                // Save vehicle to get ID first
+                await _context.Vehicles.AddAsync(vehicle);
+                await _context.SaveChangesAsync();
+                
+                _logger.LogInformation("Vehicle saved with ID: {Id}", vehicle.Id);
 
-                // Create or update vehicle record
-                if (existingVehicle == null)
-                {
-                    existingVehicle = new Vehicle
+                // Assign parking space
+                try {
+                    var parkingSpace = await _parkingService.AssignParkingSpace(vehicle);
+                    if (parkingSpace == null)
                     {
-                        VehicleNumber = entryModel.VehicleNumber,
-                        VehicleType = entryModel.VehicleType,
-                        DriverName = entryModel.DriverName,
-                        PhoneNumber = entryModel.PhoneNumber,
-                        IsParked = true,
-                        EntryTime = DateTime.Now,
-                        ParkingSpace = optimalSpace
-                    };
-                    _context.Vehicles.Add(existingVehicle);
+                        _logger.LogError("No parking space available");
+                        return Json(new { success = false, message = "Tidak ada tempat parkir tersedia" });
+                    }
+
+                    _logger.LogInformation("Assigned parking space {SpaceId} to vehicle {VehicleNumber}", 
+                        parkingSpace.Id, vehicle.VehicleNumber);
                 }
-                else
-                {
-                    existingVehicle.VehicleType = entryModel.VehicleType;
-                    existingVehicle.DriverName = entryModel.DriverName;
-                    existingVehicle.PhoneNumber = entryModel.PhoneNumber;
-                    existingVehicle.IsParked = true;
-                    existingVehicle.ParkingSpace = optimalSpace;
+                catch (Exception spaceEx) {
+                    _logger.LogError(spaceEx, "Error assigning parking space");
+                    return Json(new { success = false, message = $"Error saat menetapkan tempat parkir: {spaceEx.Message}" });
                 }
 
                 // Create parking transaction
                 var transaction = new ParkingTransaction
                 {
-                    Vehicle = existingVehicle,
+                    VehicleId = vehicle.Id,
                     EntryTime = DateTime.Now,
-                        TransactionNumber = GenerateTransactionNumber(),
-                    Status = "Active"
-                    };
-                _context.ParkingTransactions.Add(transaction);
+                    TransactionNumber = ticketNumber,
+                    TicketNumber = ticketNumber,
+                    Status = "Active",
+                    PaymentMethod = "Cash",
+                    PaymentStatus = "Pending",
+                    VehicleNumber = vehicle.VehicleNumber,
+                    VehicleType = vehicle.VehicleType,
+                    EntryPoint = "WEB",
+                    IsManualEntry = true
+                };
 
-                // Update parking space status
-                optimalSpace.IsOccupied = true;
-                optimalSpace.LastOccupiedTime = DateTime.Now;
+                _logger.LogInformation("Created transaction: {TransactionNumber}", transaction.TransactionNumber);
 
-                    await _context.SaveChangesAsync();
+                // Print ticket
+                try {
+                    var ticketContent = $"TIKET PARKIR\n==============\nNo. Tiket: {ticketNumber}\nNo. Kendaraan: {vehicle.VehicleNumber}\nWaktu Masuk: {vehicle.EntryTime:yyyy-MM-dd HH:mm:ss}\nTipe Kendaraan: {vehicle.VehicleType}\nLokasi: {vehicle.ParkingSpace?.SpaceNumber ?? "General"}\n\n";
                     
-                // Notify clients about the update via SignalR
-                if (_hubContext != null)
-                {
-                    await _hubContext.Clients.All.SendAsync("UpdateParkingStatus", new
-                    {
-                        Action = "Entry",
-                        VehicleNumber = entryModel.VehicleNumber,
-                        SpaceNumber = optimalSpace.SpaceNumber,
-                        SpaceType = optimalSpace.SpaceType,
-                        Timestamp = DateTime.Now
-                    });
+                    _printService.PrintTicket(ticketContent);
+                    
+                    _logger.LogInformation("Ticket printed: {TicketNumber}", ticketNumber);
+                }
+                catch (Exception printEx) {
+                    _logger.LogError(printEx, "Error printing ticket");
+                    // Continue even if printing fails - don't abort the entry process
                 }
 
-                _logger.LogInformation("Vehicle {VehicleNumber} entered the parking lot.", entryModel.VehicleNumber);
+                // Save transaction
+                try {
+                    await _context.ParkingTransactions.AddAsync(transaction);
+                    await _context.SaveChangesAsync();
+                    
+                    _logger.LogInformation("Database save completed for transaction {TransactionNumber}.", transaction.TransactionNumber);
 
-                // Initialize hardware if not already initialized
-                InitializeHardware();
+                    // Update dashboard
+                    await _hubContext.Clients.All.SendAsync("UpdateDashboard");
 
-                // Use hardware manager
-                await _hardwareManager.OpenGate("ENTRY");
-
-                return Ok(new
-                {
-                    message = "Kendaraan berhasil masuk",
-                    spaceNumber = optimalSpace.SpaceNumber,
-                    spaceType = optimalSpace.SpaceType,
-                    transactionNumber = transaction.TransactionNumber
-                });
+                    _logger.LogInformation("Vehicle entry process completed successfully for {VehicleNumber}", 
+                        vehicle.VehicleNumber);
+                    
+                    return Json(new { 
+                        success = true, 
+                        message = "Kendaraan berhasil masuk", 
+                        ticketNumber = ticketNumber,
+                        entryTime = vehicle.EntryTime.ToString("yyyy-MM-dd HH:mm:ss"),
+                        parkingSpace = vehicle.ParkingSpace?.SpaceNumber ?? "General" 
+                    });
+                }
+                catch (Exception dbEx) {
+                    _logger.LogError(dbEx, "Database error saving transaction");
+                    return Json(new { success = false, message = $"Error database: {dbEx.Message}" });
+                }
             }
             catch (Exception ex)
             {

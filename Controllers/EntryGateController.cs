@@ -112,7 +112,13 @@ namespace ParkIRC.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> UpdateEntryGate(string id, bool isOnline)
         {
-            var gate = await _context.EntryGates.FindAsync(id);
+            // Convert string ID to int for query
+            if (!int.TryParse(id, out int gateId))
+            {
+                return NotFound();
+            }
+
+            var gate = await _context.EntryGates.FindAsync(gateId);
             if (gate == null)
             {
                 return NotFound();
@@ -127,7 +133,13 @@ namespace ParkIRC.Controllers
         [HttpGet]
         public async Task<IActionResult> GetGateStatus(string id)
         {
-            var gate = await _context.EntryGates.FindAsync(id);
+            // Convert string ID to int for query
+            if (!int.TryParse(id, out int gateId))
+            {
+                return NotFound();
+            }
+
+            var gate = await _context.EntryGates.FindAsync(gateId);
             if (gate == null)
             {
                 return NotFound();
@@ -244,6 +256,37 @@ namespace ParkIRC.Controllers
             {
                 _logger.LogError(ex, "Error assigning parking space");
                 return StatusCode(500, new { message = "Terjadi kesalahan saat menetapkan ruang parkir" });
+            }
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetActiveVehicles()
+        {
+            try
+            {
+                // Ambil kendaraan yang sedang terparkir (IsParked = true)
+                var activeVehicles = await _context.Vehicles
+                    .Where(v => v.IsParked)
+                    .Select(v => new
+                    {
+                        id = v.Id,
+                        vehicleNumber = v.VehicleNumber,
+                        vehicleType = v.VehicleType,
+                        ticketNumber = v.TicketNumber,
+                        entryTime = v.EntryTime,
+                        parkingSpaceNumber = v.ParkingSpace != null ? v.ParkingSpace.SpaceNumber : string.Empty,
+                        parkingSpaceId = v.ParkingSpaceId
+                    })
+                    .OrderByDescending(v => v.entryTime)
+                    .Take(20)
+                    .ToListAsync();
+
+                return Json(activeVehicles);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting active vehicles");
+                return StatusCode(500, new { message = "Error retrieving active vehicles" });
             }
         }
     }
