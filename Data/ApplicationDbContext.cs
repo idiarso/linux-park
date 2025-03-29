@@ -46,9 +46,14 @@ namespace ParkIRC.Data
                 entity.Property(e => e.SpaceNumber).IsRequired();
                 entity.Property(e => e.SpaceType).IsRequired();
                 entity.Property(e => e.HourlyRate).HasColumnType("decimal(18,2)");
+                entity.Property(e => e.IsOccupied).IsRequired();
+                entity.Property(e => e.IsReserved).IsRequired();
+                entity.Property(e => e.Location);
+                entity.Property(e => e.ReservedFor);
+                
                 entity.HasOne(e => e.CurrentVehicle)
-                    .WithOne(v => v.ParkingSpace)
-                    .HasForeignKey<ParkingSpace>(p => p.CurrentVehicleId)
+                    .WithMany()
+                    .HasForeignKey(p => p.CurrentVehicleId)
                     .OnDelete(DeleteBehavior.SetNull);
             });
 
@@ -57,6 +62,13 @@ namespace ParkIRC.Data
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.VehicleNumber).IsRequired();
                 entity.Property(e => e.VehicleType).IsRequired();
+                entity.Property(e => e.TicketNumber).IsRequired();
+                
+                entity.HasOne(e => e.ParkingSpace)
+                    .WithMany()
+                    .HasForeignKey(e => e.ParkingSpaceId)
+                    .OnDelete(DeleteBehavior.SetNull);
+                
                 entity.HasOne(e => e.Shift)
                     .WithMany(s => s.Vehicles)
                     .HasForeignKey(e => e.ShiftId)
@@ -157,8 +169,14 @@ namespace ParkIRC.Data
             builder.Entity<CameraSettings>(entity =>
             {
                 entity.HasKey(e => e.Id);
-                entity.Property(e => e.ProfileName).IsRequired();
-                entity.Property(e => e.LightingCondition).HasDefaultValue("Normal");
+                entity.Property(e => e.GateId).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.Type).IsRequired().HasMaxLength(50);
+                entity.Property(e => e.IpAddress).HasMaxLength(100);
+                entity.Property(e => e.Port).HasMaxLength(10);
+                entity.Property(e => e.Path).HasMaxLength(100);
+                entity.Property(e => e.Username).HasMaxLength(50);
+                entity.Property(e => e.Password).HasMaxLength(100);
+                entity.Property(e => e.IsActive).HasDefaultValue(true);
             });
 
             builder.Entity<EntryGate>(entity =>

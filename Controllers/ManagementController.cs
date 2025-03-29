@@ -20,6 +20,7 @@ using ParkIRC.Services;
 using OfficeOpenXml;
 using iText.Kernel.Pdf;
 using OfficeOpenXml.Style;
+using Microsoft.AspNetCore.Http;
 
 namespace ParkIRC.Controllers
 {
@@ -32,19 +33,22 @@ namespace ParkIRC.Controllers
         private readonly RoleManager<IdentityRole> _roleManager;
         private readonly PrintService _printService;
         private readonly string _backupDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "backups");
+        private readonly IWebHostEnvironment _webHostEnvironment;
 
         public ManagementController(
             ApplicationDbContext context, 
             ILogger<ManagementController> logger, 
             UserManager<Operator> userManager,
             RoleManager<IdentityRole> roleManager,
-            PrintService printService)
+            PrintService printService,
+            IWebHostEnvironment webHostEnvironment)
         {
             _context = context;
             _logger = logger;
             _userManager = userManager;
             _roleManager = roleManager;
             _printService = printService;
+            _webHostEnvironment = webHostEnvironment;
             
             // Pastikan direktori backup ada
             if (!Directory.Exists(_backupDir))
@@ -56,7 +60,9 @@ namespace ParkIRC.Controllers
         // Parking Slots Management
         public async Task<IActionResult> ParkingSlots()
         {
-            var parkingSpaces = await _context.ParkingSpaces.ToListAsync();
+            var parkingSpaces = await _context.ParkingSpaces
+                .FromSqlRaw("SELECT \"Id\", \"SpaceNumber\", \"SpaceType\", \"IsOccupied\", \"HourlyRate\", \"CurrentVehicleId\", '' AS \"Location\", '' AS \"ReservedFor\", \"LastOccupiedTime\", false AS \"IsReserved\" FROM \"ParkingSpaces\"")
+                .ToListAsync();
             return View(parkingSpaces);
         }
 
@@ -969,6 +975,81 @@ namespace ParkIRC.Controllers
         public IActionResult Index()
         {
             return View();
+        }
+        
+        [HttpGet]
+        public async Task<IActionResult> ApplicationSettings()
+        {
+            var settings = await _context.SiteSettings.FirstOrDefaultAsync();
+            if (settings == null)
+            {
+                settings = new SiteSettings
+                {
+                    SiteName = "ParkIRC",
+                    ShowLogo = true,
+                    ThemeColor = "#007bff",
+                    FooterText = "© 2024 ParkIRC"
+                };
+                _context.SiteSettings.Add(settings);
+                await _context.SaveChangesAsync();
+            }
+            return View(settings);
+        }
+        
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> UpdateApplicationSettings(SiteSettings model, IFormFile logo, IFormFile favicon)
+        {
+            if (ModelState.IsValid)
+            {
+                var settings = await _context.SiteSettings.FirstOrDefaultAsync();
+                if (settings == null)
+                {
+                    settings = new SiteSettings();
+                    _context.SiteSettings.Add(settings);
+                }
+                
+                if (logo != null)
+                {
+                    var uploadsDir = Path.Combine(_webHostEnvironment.WebRootPath, "images", "site");
+                    Directory.CreateDirectory(uploadsDir); // Make sure directory exists
+                    
+                    var logoPath = Path.Combine("images", "site", $"logo_{DateTime.Now:yyyyMMddHHmmss}.png");
+                    var fullPath = Path.Combine(_webHostEnvironment.WebRootPath, logoPath);
+                    
+                    using (var stream = new FileStream(fullPath, FileMode.Create))
+                    {
+                        await logo.CopyToAsync(stream);
+                    }
+                    settings.LogoPath = "/" + logoPath.Replace("\\", "/");
+                }
+
+                if (favicon != null)
+                {
+                    var uploadsDir = Path.Combine(_webHostEnvironment.WebRootPath, "images", "site");
+                    Directory.CreateDirectory(uploadsDir); // Make sure directory exists
+                    
+                    var faviconPath = Path.Combine("images", "site", $"favicon_{DateTime.Now:yyyyMMddHHmmss}.ico");
+                    var fullPath = Path.Combine(_webHostEnvironment.WebRootPath, faviconPath);
+                    
+                    using (var stream = new FileStream(fullPath, FileMode.Create))
+                    {
+                        await favicon.CopyToAsync(stream);
+                    }
+                    settings.FaviconPath = "/" + faviconPath.Replace("\\", "/");
+                }
+
+                settings.SiteName = model.SiteName;
+                settings.FooterText = model.FooterText;
+                settings.ThemeColor = model.ThemeColor;
+                settings.ShowLogo = model.ShowLogo;
+                settings.LastUpdated = DateTime.Now;
+                settings.UpdatedBy = User.Identity?.Name;
+
+                await _context.SaveChangesAsync();
+                TempData["Success"] = "Pengaturan aplikasi berhasil diupdate";
+            }
+            return RedirectToAction(nameof(ApplicationSettings));
         }
         
         [HttpGet("Backup")]

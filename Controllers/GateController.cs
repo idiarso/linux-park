@@ -42,7 +42,125 @@ namespace ParkIRC.Controllers
         // GET: Gate/Entry
         public IActionResult Entry()
         {
+            // Load any saved camera settings from database or cookies
+            // and pass to the view if needed
+            
             return View();
+        }
+
+        // POST: Gate/SaveCameraSettings
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> SaveCameraSettings([FromBody] CameraSettings settings)
+        {
+            try
+            {
+                _logger.LogInformation($"Saving camera settings. Type: {settings.Type}");
+                
+                // Temukan pengaturan kamera yang ada
+                var existingSettings = await _context.CameraSettings
+                    .FirstOrDefaultAsync(c => c.GateId == settings.GateId);
+                    
+                if (existingSettings != null)
+                {
+                    // Update existing settings
+                    existingSettings.Type = settings.Type;
+                    existingSettings.IpAddress = settings.IpAddress;
+                    existingSettings.Port = settings.Port;
+                    existingSettings.Path = settings.Path;
+                    existingSettings.Username = settings.Username;
+                    existingSettings.Password = settings.Password;
+                    existingSettings.LastUpdated = DateTime.Now;
+                    existingSettings.UpdatedBy = User.FindFirstValue(ClaimTypes.Name) ?? "System";
+                    
+                    _context.CameraSettings.Update(existingSettings);
+                }
+                else
+                {
+                    // Create new settings
+                    var newSettings = new CameraSettings
+                    {
+                        GateId = settings.GateId,
+                        Type = settings.Type,
+                        IpAddress = settings.IpAddress,
+                        Port = settings.Port,
+                        Path = settings.Path,
+                        Username = settings.Username,
+                        Password = settings.Password,
+                        IsActive = true,
+                        CreatedAt = DateTime.Now,
+                        LastUpdated = DateTime.Now,
+                        UpdatedBy = User.FindFirstValue(ClaimTypes.Name) ?? "System"
+                    };
+                    
+                    await _context.CameraSettings.AddAsync(newSettings);
+                }
+                
+                await _context.SaveChangesAsync();
+                
+                return Json(new { success = true, message = "Pengaturan kamera berhasil disimpan" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving camera settings");
+                return Json(new { success = false, message = "Terjadi kesalahan: " + ex.Message });
+            }
+        }
+        
+        // GET: Gate/GetCameraSettings
+        [HttpGet]
+        public async Task<IActionResult> GetCameraSettings(string gateId = "GATE1")
+        {
+            try
+            {
+                // Berdasarkan database, CameraSettings tidak memiliki kolom GateId
+                // Jadi, ambil pengaturan kamera terbaru saja
+                var settings = await _context.CameraSettings
+                    .OrderByDescending(c => c.CreatedAt)
+                    .FirstOrDefaultAsync();
+                    
+                if (settings == null)
+                {
+                    // Return default settings
+                    return Json(new 
+                    { 
+                        success = true, 
+                        settings = new 
+                        {
+                            type = "Webcam",
+                            ipAddress = "192.168.1.100",
+                            port = "8080",
+                            path = "/video",
+                            username = "admin",
+                            password = "",
+                            isActive = true
+                        }
+                    });
+                }
+                
+                return Json(new 
+                { 
+                    success = true, 
+                    settings = new 
+                    {
+                        type = "Webcam", // Default karena tidak ada di model
+                        ipAddress = "192.168.1.100", // Default
+                        port = "8080", // Default
+                        path = "/video", // Default
+                        username = "admin", // Default
+                        password = "●●●●●●●●", // Don't return the actual password
+                        isActive = settings.IsActive,
+                        profileName = settings.ProfileName,
+                        brightness = settings.Brightness,
+                        contrast = settings.Contrast
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting camera settings");
+                return Json(new { success = false, message = "Terjadi kesalahan: " + ex.Message });
+            }
         }
 
         // POST: Gate/ProcessEntry
@@ -105,7 +223,16 @@ namespace ParkIRC.Controllers
                     IsParked = true,
                     EntryImagePath = photoPath ?? string.Empty,
                     ParkingSpaceId = parkingSpace.Id,
-                    ShiftId = currentShift.Id
+                    ShiftId = currentShift.Id,
+                    TicketNumber = GenerateTicketNumber(),
+                    PlateNumber = model.VehicleNumber,
+                    EntryGateId = "GATE1",
+                    ExitGateId = "",
+                    ExternalSystemId = $"VEH-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N").Substring(0, 6)}",
+                    CreatedBy = User.FindFirstValue(ClaimTypes.Name) ?? "System",
+                    CreatedAt = DateTime.Now,
+                    Status = "Active",
+                    VehicleTypeId = GetVehicleTypeId(model.VehicleType)
                 };
 
                 // Generate barcode
@@ -128,35 +255,86 @@ namespace ParkIRC.Controllers
                 parkingSpace.IsOccupied = true;
                 parkingSpace.LastOccupiedTime = DateTime.Now;
 
+                // Generate ticket number yang akan digunakan bersama
+                string ticketNumber = GenerateTicketNumber();
+                vehicle.TicketNumber = ticketNumber;
+
                 // Create parking ticket
                 var ticket = new ParkingTicket
                 {
-                    TicketNumber = GenerateTicketNumber(),
+                    Id = $"TKT-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N").Substring(0, 6)}",
+                    TicketNumber = ticketNumber,
                     BarcodeData = barcodeData,
                     BarcodeImagePath = barcodeImagePath,
                     IssueTime = DateTime.Now,
+                    EntryTime = DateTime.Now,
                     Vehicle = vehicle,
                     OperatorId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value,
-                    ShiftId = currentShift.Id
+                    ShiftId = currentShift.Id,
+                    CreatedAt = DateTime.Now,
+                    CreatedBy = User.FindFirstValue(ClaimTypes.Name) ?? "System",
+                    Status = "Active",
+                    IsValid = true,
+                    LicensePlate = vehicle.VehicleNumber
                 };
 
-                // Create parking transaction
-                var transaction = new ParkingTransaction
+                // Pisahkan operasi penyimpanan untuk mengisolasi error
+                try
                 {
-                    Vehicle = vehicle,
-                    ParkingSpace = parkingSpace,
-                    EntryTime = DateTime.Now,
-                    TransactionNumber = GenerateTransactionNumber(),
-                    Status = "Active"
-                };
+                    // Simpan vehicle terlebih dahulu
+                    await _context.Vehicles.AddAsync(vehicle);
+                    await _context.SaveChangesAsync();
+                    
+                    _logger.LogInformation($"Berhasil menyimpan vehicle dengan ID {vehicle.Id}");
+                    
+                    // Kemudian simpan parking ticket
+                    await _context.ParkingTickets.AddAsync(ticket);
+                    await _context.SaveChangesAsync();
+                    
+                    _logger.LogInformation($"Berhasil menyimpan parking ticket dengan ID {ticket.Id}");
+                    
+                    // Buat transaction setelah vehicle dan ticket tersimpan
+                    var transaction = new ParkingTransaction
+                    {
+                        Id = $"TRX-{DateTime.Now:yyyyMMdd}-{Guid.NewGuid().ToString("N").Substring(0, 6)}",
+                        VehicleId = vehicle.Id,
+                        ParkingSpaceId = parkingSpace.Id,
+                        EntryTime = DateTime.Now,
+                        TransactionNumber = GenerateTransactionNumber(),
+                        TicketNumber = ticket.TicketNumber,
+                        Status = "Active",
+                        PaymentStatus = "Pending",
+                        PaymentMethod = "Cash",
+                        VehicleNumber = vehicle.VehicleNumber,
+                        VehicleType = vehicle.VehicleType,
+                        EntryPoint = "GATE",
+                        IsManualEntry = false,
+                        HourlyRate = parkingSpace.HourlyRate,
+                        Amount = 0m,
+                        TotalAmount = 0m,
+                        PaymentAmount = 0m,
+                        OperatorId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "System",
+                        ImagePath = vehicle.EntryImagePath ?? "",
+                        VehicleImagePath = vehicle.EntryImagePath ?? ""
+                    };
 
-                await _context.Vehicles.AddAsync(vehicle);
-                await _context.ParkingTickets.AddAsync(ticket);
-                await _context.ParkingTransactions.AddAsync(transaction);
-                await _context.SaveChangesAsync();
+                    // Terakhir, simpan parking transaction
+                    await _context.ParkingTransactions.AddAsync(transaction);
+                    await _context.SaveChangesAsync();
+                    
+                    _logger.LogInformation($"Berhasil menyimpan semua data");
+                }
+                catch (Exception dbEx)
+                {
+                    _logger.LogError(dbEx, "Error detail saat menyimpan data: {Message}", dbEx.Message);
+                    if (dbEx.InnerException != null)
+                    {
+                        _logger.LogError(dbEx.InnerException, "Inner exception: {Message}", dbEx.InnerException.Message);
+                    }
+                    throw; // Re-throw untuk dihandle di catch block utama
+                }
 
                 // Print entry ticket
-                var ticketNumber = ticket.TicketNumber;
                 var entryTime = DateTime.Now;
 
                 bool printSuccess = false;
@@ -390,10 +568,15 @@ namespace ParkIRC.Controllers
         {
             try
             {
-                // Get all unoccupied parking spaces for the vehicle type
+                // Use a custom SQL query to handle missing columns
                 var availableSpaces = await _context.ParkingSpaces
-                    .Where(p => !p.IsOccupied && p.SpaceType == vehicleType && p.IsActive)
-                    .OrderBy(p => p.LastOccupiedTime)
+                    .FromSqlRaw(@"SELECT ""Id"", ""SpaceNumber"", ""SpaceType"", ""IsOccupied"", ""HourlyRate"", 
+                        ""CurrentVehicleId"", '' AS ""Location"", '' AS ""ReservedFor"", ""LastOccupiedTime"", 
+                        false AS ""IsReserved"" 
+                        FROM ""ParkingSpaces"" 
+                        WHERE NOT ""IsOccupied"" AND ""SpaceType"" = {0}
+                        ORDER BY ""LastOccupiedTime"" 
+                        LIMIT 1", vehicleType)
                     .FirstOrDefaultAsync();
 
                 if (availableSpaces == null)
@@ -424,6 +607,19 @@ namespace ParkIRC.Controllers
                 _logger.LogError(ex, "Error opening gate");
                 throw;
             }
+        }
+
+        // Method untuk menentukan VehicleTypeId berdasarkan jenis kendaraan
+        private int GetVehicleTypeId(string vehicleType)
+        {
+            return vehicleType.ToLower() switch
+            {
+                "car" => 1,
+                "motorcycle" => 2,
+                "truck" => 3,
+                "bus" => 4,
+                _ => 1 // Default ke Car jika tidak dikenali
+            };
         }
     }
 } 
