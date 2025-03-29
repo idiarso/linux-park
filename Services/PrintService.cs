@@ -5,6 +5,8 @@ using Microsoft.Extensions.Configuration;
 using System.Text;
 using System.Diagnostics;
 using ParkIRC.Models;
+using System.IO;
+using System.Threading;
 
 namespace ParkIRC.Services
 {
@@ -14,105 +16,294 @@ namespace ParkIRC.Services
         private readonly IConfiguration _config;
         private readonly string _printerName;
         private readonly string _driverName;
+        private readonly int _maxRetries;
 
         public PrintService(ILogger<PrintService> logger, IConfiguration config)
         {
             _logger = logger;
             _config = config;
-            _printerName = config["Printer:DefaultName"] ?? "EPSON_TM_T82";
-            _driverName = config["Printer:Driver"] ?? "epson-escpos";
+            _printerName = config["PrinterSettings:PrinterName"] ?? config["Printer:DefaultName"] ?? "TM-T82X-S-A";
+            _driverName = config["Printer:Driver"] ?? "escpos";
+            _maxRetries = config.GetValue<int>("PrinterSettings:MaxRetries", 3);
+            
+            _logger.LogInformation($"PrintService initialized with printer: {_printerName}");
         }
 
         public bool PrintTicket(string content)
         {
-            try
+            // Coba beberapa pendekatan secara berurutan jika yang sebelumnya gagal
+            for (int attempt = 1; attempt <= _maxRetries; attempt++)
             {
-                // Implementasi sesuai dengan printer yang digunakan
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                _logger.LogInformation($"Print attempt {attempt} of {_maxRetries}");
+                
+                try
                 {
-                    return PrintWindows(content);
+                    // Pendekatan 1: Menggunakan metode binary direct
+                    if (attempt == 1)
+                    {
+                        if (PrintBinaryDirect(content))
+                        {
+                            _logger.LogInformation("Print successful using binary direct method");
+                            return true;
+                        }
+                    }
+                    // Pendekatan 2: Menggunakan metode file temporary
+                    else if (attempt == 2)
+                    {
+                        if (PrintViaFile(content))
+                        {
+                            _logger.LogInformation("Print successful using temporary file method");
+                            return true;
+                        }
+                    }
+                    // Pendekatan 3: Menggunakan metode shell script
+                    else
+                    {
+                        if (PrintViaScript(content))
+                        {
+                            _logger.LogInformation("Print successful using shell script method");
+                            return true;
+                        }
+                    }
                 }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                catch (Exception ex)
                 {
-                    return PrintLinux(content);
+                    _logger.LogError(ex, $"Error in print attempt {attempt}");
                 }
                 
-                throw new PlatformNotSupportedException("Platform tidak didukung");
+                // Tunggu sebentar sebelum mencoba lagi
+                if (attempt < _maxRetries)
+                {
+                    Thread.Sleep(1000);
+                }
+            }
+            
+            _logger.LogError("All print attempts failed");
+            return false;
+        }
+
+        private bool PrintBinaryDirect(string content)
+        {
+            _logger.LogDebug("Using binary direct printing method");
+            
+            try
+            {
+                string tempFile = Path.GetTempFileName();
+                
+                try 
+                {
+                    // Gunakan metode binary langsung untuk ESC/POS commands
+                    using (var stream = new FileStream(tempFile, FileMode.Create))
+                    {
+                        // Initialize printer (ESC @)
+                        stream.WriteByte(0x1B);
+                        stream.WriteByte(0x40);
+                        
+                        // Set centering (ESC a 1)
+                        stream.WriteByte(0x1B);
+                        stream.WriteByte(0x61);
+                        stream.WriteByte(0x01);
+                        
+                        // Text content
+                        byte[] contentBytes = Encoding.UTF8.GetBytes(content);
+                        stream.Write(contentBytes, 0, contentBytes.Length);
+                        
+                        // Line feeds at the end
+                        byte[] linefeeds = Encoding.ASCII.GetBytes("\n\n\n\n");
+                        stream.Write(linefeeds, 0, linefeeds.Length);
+                        
+                        // Cut paper (GS V 66 1)
+                        stream.WriteByte(0x1D);
+                        stream.WriteByte(0x56);
+                        stream.WriteByte(0x42);
+                        stream.WriteByte(0x01);
+                    }
+                    
+                    // Kirim ke printer menggunakan lp command
+                    var process = new Process
+                    {
+                        StartInfo = new ProcessStartInfo
+                        {
+                            FileName = "/usr/bin/lp",
+                            Arguments = $"-d {_printerName} -o raw {tempFile}",
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true,
+                            CreateNoWindow = true
+                        }
+                    };
+
+                    process.Start();
+                    string output = process.StandardOutput.ReadToEnd();
+                    string error = process.StandardError.ReadToEnd();
+                    process.WaitForExit(10000); // Wait up to 10 seconds
+                    
+                    if (!string.IsNullOrEmpty(output))
+                        _logger.LogDebug($"Printer output: {output}");
+                        
+                    if (!string.IsNullOrEmpty(error))
+                        _logger.LogError($"Printer error: {error}");
+
+                    // Buat salinan file cetak untuk debugging
+                    try {
+                        string debugCopyFile = $"last_print_{DateTime.Now:yyyyMMdd_HHmmss}.bin";
+                        File.Copy(tempFile, debugCopyFile);
+                        _logger.LogDebug($"Copied print file to {debugCopyFile} for debugging");
+                    }
+                    catch (Exception ex) {
+                        _logger.LogWarning($"Could not create debug copy of print file: {ex.Message}");
+                    }
+
+                    if (process.ExitCode != 0)
+                    {
+                        _logger.LogError($"Printing failed with exit code: {process.ExitCode}, Error: {error}");
+                        return false;
+                    }
+                    
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error in binary direct printing method");
+                    return false;
+                }
+                finally
+                {
+                    // Hapus file temporary
+                    try { File.Delete(tempFile); } 
+                    catch { /* ignore */ }
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error printing ticket");
+                _logger.LogError(ex, "Error creating temporary file for binary direct printing");
                 return false;
             }
         }
 
-        private bool PrintWindows(string content)
+        private bool PrintViaFile(string content)
         {
-            // Implementasi untuk Windows menggunakan Raw Printing
-            // ...
-            return true;
-        }
-
-        private bool PrintLinux(string content)
-        {
+            _logger.LogDebug("Using temporary file printing method");
+            
             try
             {
-                // Tambahkan ESC/POS commands untuk format printer thermal
-                var escposCommands = new StringBuilder();
+                // Buat file teks biasa tanpa ESC/POS commands
+                string tempFile = Path.GetTempFileName();
+                File.WriteAllText(tempFile, content);
                 
-                // Initialize printer
-                escposCommands.Append("\x1B\x40"); // ESC @ - Initialize printer
-                
-                // Set print mode
-                escposCommands.Append("\x1B\x21\x00"); // ESC ! 0 - Normal print mode
-                
-                // Add content
-                escposCommands.Append(content);
-                
-                // Cut paper
-                if (_config.GetValue<bool>("Printer:AutoCut"))
+                var process = new Process
                 {
-                    escposCommands.Append("\x1D\x56\x41\x00"); // GS V A 0 - Full cut
-                }
-                
-                // Open cash drawer if enabled
-                if (_config.GetValue<bool>("Printer:CashDrawer:Enabled"))
-                {
-                    escposCommands.Append("\x1B\x70\x00\x19\x78"); // ESC p 0 25 120 - Pulse on pin 2
-                }
-
-                // Kirim ke printer menggunakan lp command
-                var process = new System.Diagnostics.Process
-                {
-                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    StartInfo = new ProcessStartInfo
                     {
-                        FileName = "lp",
-                        Arguments = $"-d {_printerName} -o raw",
+                        FileName = "/usr/bin/lp",
+                        Arguments = $"-d {_printerName} {tempFile}",
                         UseShellExecute = false,
-                        RedirectStandardInput = true,
                         RedirectStandardOutput = true,
                         RedirectStandardError = true,
                         CreateNoWindow = true
                     }
                 };
-
+                
                 process.Start();
-                process.StandardInput.Write(escposCommands.ToString());
-                process.StandardInput.Close();
-                process.WaitForExit();
-
-                if (process.ExitCode != 0)
-                {
-                    var error = process.StandardError.ReadToEnd();
-                    _logger.LogError($"Printing failed: {error}");
-                    return false;
-                }
-
-                return true;
+                process.WaitForExit(10000);
+                
+                string output = process.StandardOutput.ReadToEnd();
+                string error = process.StandardError.ReadToEnd();
+                
+                if (!string.IsNullOrEmpty(error))
+                    _logger.LogError($"PrintViaFile error: {error}");
+                
+                // Hapus file temporary
+                try { File.Delete(tempFile); } 
+                catch { /* ignore */ }
+                
+                return process.ExitCode == 0;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error printing on Linux");
+                _logger.LogError(ex, "Error in temporary file printing method");
+                return false;
+            }
+        }
+
+        private bool PrintViaScript(string content)
+        {
+            _logger.LogDebug("Using shell script printing method");
+            
+            try
+            {
+                // Buat shell script untuk printing
+                string scriptFile = Path.GetTempFileName() + ".sh";
+                string contentFile = Path.GetTempFileName() + ".txt";
+                
+                // Simpan konten ke file
+                File.WriteAllText(contentFile, content);
+                
+                // Buat shell script
+                StringBuilder script = new StringBuilder();
+                script.AppendLine("#!/bin/bash");
+                script.AppendLine($"# Auto-generated print script for {_printerName}");
+                script.AppendLine("echo \"=== Print Script Started ===\"");
+                script.AppendLine($"echo -ne \"\\x1B\\x40\" > /tmp/print-data.bin");  // Initialize
+                script.AppendLine($"echo -ne \"\\x1B\\x61\\x01\" >> /tmp/print-data.bin");  // Center
+                script.AppendLine($"cat \"{contentFile}\" >> /tmp/print-data.bin");  // Content
+                script.AppendLine($"echo -ne \"\\n\\n\\n\\n\" >> /tmp/print-data.bin");  // Feed
+                script.AppendLine($"echo -ne \"\\x1D\\x56\\x42\\x01\" >> /tmp/print-data.bin");  // Cut
+                script.AppendLine($"lp -d {_printerName} -o raw /tmp/print-data.bin");
+                script.AppendLine("echo \"=== Print Script Completed ===\"");
+                
+                File.WriteAllText(scriptFile, script.ToString());
+                
+                // Make executable
+                var chmodProcess = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "/bin/chmod",
+                        Arguments = $"+x {scriptFile}",
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+                chmodProcess.Start();
+                chmodProcess.WaitForExit();
+                
+                // Run script
+                var process = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = scriptFile,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        CreateNoWindow = true
+                    }
+                };
+                
+                process.Start();
+                string output = process.StandardOutput.ReadToEnd();
+                string error = process.StandardError.ReadToEnd();
+                process.WaitForExit(15000);
+                
+                _logger.LogDebug($"Script output: {output}");
+                if (!string.IsNullOrEmpty(error))
+                    _logger.LogError($"Script error: {error}");
+                
+                // Hapus file temporary
+                try 
+                { 
+                    File.Delete(scriptFile);
+                    File.Delete(contentFile);
+                    File.Delete("/tmp/print-data.bin");
+                } 
+                catch { /* ignore */ }
+                
+                return process.ExitCode == 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in shell script printing method");
                 return false;
             }
         }

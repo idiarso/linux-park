@@ -5,6 +5,7 @@
     ViewData["Title"] = "Riwayat Parkir";
     string currentVehicleType = ViewData["VehicleType"] as string ?? "";
     var parkedVehicles = ViewData["ParkedVehicles"] as int? ?? 0;
+    string vehicleNumber = ViewData["VehicleNumber"] as string ?? "";
 }
 
 @section Styles {
@@ -40,6 +41,11 @@
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
         }
+
+        /* Highlight the searched vehicle */
+        tr.highlight {
+            background-color: rgba(255, 255, 0, 0.2) !important;
+        }
     </style>
 }
 
@@ -59,34 +65,41 @@
         <div class="card-body">
             <form id="historyFilterForm" method="get" action="@Url.Action("Index")" class="mb-4">
                 <div class="row g-2">
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">Tanggal Mulai</label>
                         <input type="date" class="form-control form-control-sm" name="startDate" value="@(ViewData["StartDate"] != null ? Convert.ToDateTime(ViewData["StartDate"]).ToString("yyyy-MM-dd") : "")" />
                     </div>
-                    <div class="col-md-3">
+                    <div class="col-md-2">
                         <label class="form-label">Tanggal Akhir</label>
                         <input type="date" class="form-control form-control-sm" name="endDate" value="@(ViewData["EndDate"] != null ? Convert.ToDateTime(ViewData["EndDate"]).ToString("yyyy-MM-dd") : "")" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Nomor Kendaraan</label>
+                        <input type="text" class="form-control form-control-sm" 
+                               name="vehicleNumber" 
+                               value="@vehicleNumber" 
+                               placeholder="Cari nomor kendaraan..." />
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">Status</label>
                         <select class="form-select form-select-sm" name="status" id="statusFilter">
                             <option value="">Semua Status</option>
-                            @if (ViewData["CurrentFilter"]?.ToString() == "active")
+                            @if (ViewData["CurrentFilter"]?.ToString() == "terparkir" || ViewData["CurrentFilter"]?.ToString() == "active")
                             {
-                                <option value="active" selected>Parkir (Aktif)</option>
+                                <option value="terparkir" selected>Terparkir</option>
                             }
                             else
                             {
-                                <option value="active">Parkir (Aktif)</option>
+                                <option value="terparkir">Terparkir</option>
                             }
                             
-                            @if (ViewData["CurrentFilter"]?.ToString() == "completed")
+                            @if (ViewData["CurrentFilter"]?.ToString() == "keluar" || ViewData["CurrentFilter"]?.ToString() == "completed")
                             {
-                                <option value="completed" selected>Selesai</option>
+                                <option value="keluar" selected>Keluar</option>
                             }
                             else
                             {
-                                <option value="completed">Selesai</option>
+                                <option value="keluar">Keluar</option>
                             }
                             
                             @if (ViewData["CurrentFilter"]?.ToString() == "cancelled")
@@ -99,7 +112,7 @@
                             }
                         </select>
                     </div>
-                    <div class="col-md-3 d-flex align-items-end">
+                    <div class="col-md-2 d-flex align-items-end">
                         <div class="d-grid w-100">
                             <button type="submit" class="btn btn-primary btn-sm">
                                 <i class="fas fa-filter me-1"></i> Filter
@@ -118,11 +131,21 @@
                 </div>
             }
 
+            @if (!string.IsNullOrEmpty(vehicleNumber) && !Model.Any())
+            {
+                <div class="alert alert-info py-2">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Info:</strong> Tidak ditemukan kendaraan dengan nomor yang mengandung "@vehicleNumber"
+                </div>
+            }
+
             <div class="table-responsive">
                 <table class="table table-bordered table-striped table-hover" id="historyTable" width="100%" cellspacing="0">
                     <thead>
                         <tr>
                             <th>Nomor</th>
+                            <th>Jenis</th>
+                            <th>Lokasi</th>
                             <th>Masuk</th>
                             <th>Keluar</th>
                             <th>Durasi</th>
@@ -133,8 +156,14 @@
                     <tbody>
                         @foreach (var item in Model)
                         {
-                            <tr>
+                            var rowClass = !string.IsNullOrEmpty(vehicleNumber) && 
+                                           item.VehicleNumber.ToLower().Contains(vehicleNumber.ToLower()) ? 
+                                           "highlight" : "";
+                                           
+                            <tr class="@rowClass">
                                 <td>@item.VehicleNumber</td>
+                                <td>@item.VehicleType</td>
+                                <td>@item.ParkingSpace</td>
                                 <td>@item.EntryTime.ToString("dd/MM/yy HH:mm")</td>
                                 <td>
                                     @if (item.ExitTime.HasValue)
@@ -148,7 +177,7 @@
                                 </td>
                                 <td>@item.Duration</td>
                                 <td>
-                                    @if (item.Status == "Completed")
+                                    @if (item.Status.ToLower() == "completed" || item.ExitTime.HasValue)
                                     {
                                         <span>Rp @item.Amount.ToString("N0")</span>
                                     }
@@ -158,11 +187,7 @@
                                     }
                                 </td>
                                 <td>
-                                    @{
-                                        var badgeClass = TransactionStatusType.GetStatusBadgeClass(item.Status);
-                                        var statusText = TransactionStatusType.GetDisplayName(item.Status);
-                                    }
-                                    <span class="badge @badgeClass">@statusText</span>
+                                    <span class="badge @item.StatusBadgeClass">@item.DisplayStatus</span>
                                 </td>
                             </tr>
                         }
@@ -178,7 +203,7 @@
     <script>
         $(document).ready(function() {
             $('#historyTable').DataTable({
-                order: [[1, 'desc']], // Sort by entry time (descending)
+                order: [[3, 'desc']], // Sort by entry time (descending)
                 language: {
                     url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/id.json'
                 },
@@ -200,45 +225,32 @@
                 }
             });
             
-            // If there's a selected filter, add the visual indicator
-            if ($('#statusFilter').val()) {
-                $('#statusFilter').addClass('border-primary');
+            // Highlight vehicle number if searched
+            const vehicleNumber = '@ViewData["VehicleNumber"]';
+            if (vehicleNumber) {
+                // Add visual indicator that search is active
+                $('input[name="vehicleNumber"]').addClass('border-primary');
             }
             
-            // Adjust table for small screens
-            function adjustTableForScreenSize() {
-                const width = window.innerWidth;
-                const table = $('#historyTable').DataTable();
+            // Connect to SignalR hub to get real-time updates
+            const connection = new signalR.HubConnectionBuilder()
+                .withUrl("/parkingHub")
+                .build();
                 
-                if (width < 576) {
-                    // For very small screens, minimize the UI
-                    $('.dataTables_length select').addClass('form-select-sm');
-                    $('.dataTables_filter input').addClass('form-control-sm');
+            connection.on("ReceiveUpdate", function(update) {
+                // Refresh the page when transactions change
+                if (update.action === "Entry" || update.action === "Exit") {
+                    // Add a notification that data needs refresh
+                    $('<div class="alert alert-info alert-dismissible fade show mt-3" role="alert">')
+                        .html('<strong>Data Updated!</strong> New parking activity detected. <button class="btn btn-sm btn-primary ms-2" onclick="location.reload()">Refresh</button>')
+                        .append('<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>')
+                        .appendTo('.card-body:first');
                 }
-            }
+            });
             
-            // Call once on page load
-            adjustTableForScreenSize();
-            
-            // Call on window resize
-            $(window).resize(adjustTableForScreenSize);
-        });
-
-        // SignalR Connection
-        const connection = new signalR.HubConnectionBuilder()
-            .withUrl("/parkingHub")
-            .withAutomaticReconnect([0, 2000, 5000, 10000, 30000]) // Retry with backoff
-            .build();
-
-        connection.start().catch(err => console.error(err));
-
-        // Notify when history data is updated
-        connection.on("NotifyHistoryUpdate", function(historyData) {
-            console.log(`History data updated: ${JSON.stringify(historyData)}`);
-            toastr.info('Data riwayat telah diperbarui', 'Perbarui Halaman');
-            // Add a reload button to the notification
-            $('.toast-info').last().click(function() {
-                location.reload();
+            // Start the connection
+            connection.start().catch(function(err) {
+                console.error(err.toString());
             });
         });
     </script>

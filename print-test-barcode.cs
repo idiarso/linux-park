@@ -14,7 +14,7 @@ using SixLabors.ImageSharp.Formats.Png;
 using SixLabors.ImageSharp.PixelFormats;
 using ZXing.Common;
 
-class PrinterTest
+class BarcodeTest
 {
     static async Task Main(string[] args)
     {
@@ -24,7 +24,7 @@ class PrinterTest
         // Ambil service provider dari application
         var services = CreateServices();
         var printerService = services.GetRequiredService<IPrinterService>();
-        var logger = services.GetRequiredService<ILogger<PrinterTest>>();
+        var logger = services.GetRequiredService<ILogger<BarcodeTest>>();
 
         try
         {

@@ -106,14 +106,57 @@ namespace ParkIRC.Controllers
                 return Json(new { success = false, message = "Nomor kendaraan tidak valid" });
             }
 
+            // Normalisasi nomor kendaraan (hapus spasi berlebih dan ubah ke uppercase)
+            vehicleNumber = vehicleNumber.Trim().ToUpper();
+            
+            // Cari dengan nomor kendaraan yang dinormalisasi dan gunakan Contains untuk pencarian lebih fleksibel
             var transaction = await _context.ParkingTransactions
                 .Include(t => t.Vehicle)
-                .FirstOrDefaultAsync(t => t.Vehicle.VehicleNumber == vehicleNumber && t.ExitTime == default);
+                .Where(t => t.ExitTime == default)
+                .OrderByDescending(t => t.EntryTime)
+                .FirstOrDefaultAsync(t => 
+                    // Periksa apakah vehicle number persis sama
+                    t.Vehicle.VehicleNumber.ToUpper() == vehicleNumber || 
+                    // Atau coba tanpa spasi (misal B1234CD)
+                    t.Vehicle.VehicleNumber.Replace(" ", "").ToUpper() == vehicleNumber.Replace(" ", "") ||
+                    // Atau coba contains agar lebih fleksibel
+                    t.Vehicle.VehicleNumber.ToUpper().Contains(vehicleNumber) ||
+                    vehicleNumber.Contains(t.Vehicle.VehicleNumber.ToUpper()));
 
             if (transaction == null)
             {
-                return Json(new { success = false, message = "Kendaraan tidak ditemukan atau sudah keluar" });
+                // Jika tidak ditemukan, cari juga di tabel Vehicle langsung untuk kasus khusus
+                var vehicle = await _context.Vehicles
+                    .Where(v => v.IsParked && 
+                          (v.VehicleNumber.ToUpper() == vehicleNumber || 
+                           v.VehicleNumber.Replace(" ", "").ToUpper() == vehicleNumber.Replace(" ", "") ||
+                           v.VehicleNumber.ToUpper().Contains(vehicleNumber) ||
+                           vehicleNumber.Contains(v.VehicleNumber.ToUpper())))
+                    .OrderByDescending(v => v.EntryTime)
+                    .FirstOrDefaultAsync();
+
+                if (vehicle != null)
+                {
+                    // Jika kendaraan ditemukan di tabel Vehicles tapi tidak di Transactions, coba cari transaksi terkait
+                    transaction = await _context.ParkingTransactions
+                        .Include(t => t.Vehicle)
+                        .Where(t => t.VehicleId == vehicle.Id && t.ExitTime == default)
+                        .OrderByDescending(t => t.EntryTime)
+                        .FirstOrDefaultAsync();
+                    
+                    if (transaction == null)
+                    {
+                        // Jika masih tidak ditemukan transaksi, beri feedback lebih spesifik
+                        return Json(new { success = false, message = $"Kendaraan {vehicle.VehicleNumber} ditemukan tetapi tidak memiliki transaksi parkir aktif" });
+                    }
+                }
+                else
+                {
+                    return Json(new { success = false, message = "Kendaraan tidak ditemukan atau sudah keluar" });
+                }
             }
+
+            _logger.LogInformation($"Kendaraan ditemukan: {transaction.Vehicle?.VehicleNumber} dengan tiket {transaction.TicketNumber}");
 
             return Json(new { 
                 success = true, 
@@ -145,6 +188,7 @@ namespace ParkIRC.Controllers
         {
             try
             {
+                _logger.LogInformation("=== PRINT RECEIPT START ===");
                 _logger.LogInformation("Printing receipt for vehicle {VehicleNumber}, ticket {TicketNumber}", vehicleNumber, ticketNumber);
                 
                 // Create receipt content
@@ -167,21 +211,56 @@ namespace ParkIRC.Controllers
                 content.AppendLine();
                 content.AppendLine();
 
+                // Coba simpan konten receipt ke file terlebih dahulu
+                try {
+                    string debugFile = $"receipt_debug_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+                    System.IO.File.WriteAllText(debugFile, content.ToString());
+                    _logger.LogInformation($"Saved receipt content to {debugFile} for debugging");
+                }
+                catch (Exception ex) {
+                    _logger.LogWarning($"Could not save receipt content to file: {ex.Message}");
+                }
+
+                // Log content untuk debugging
+                _logger.LogInformation("=== RECEIPT CONTENT START ===");
+                _logger.LogInformation($"{content}");
+                _logger.LogInformation("=== RECEIPT CONTENT END ===");
+                
                 // Send to printer
+                _logger.LogInformation("Sending to printer service...");
                 bool printSuccess = _printService.PrintTicket(content.ToString());
+                _logger.LogInformation($"Print result: {(printSuccess ? "SUCCESS" : "FAILED")}");
                 
                 if (!printSuccess)
                 {
                     _logger.LogWarning("Failed to print receipt for vehicle {VehicleNumber}", vehicleNumber);
-                    return Json(new { success = false, message = "Gagal mencetak struk. Cek printer Anda." });
+                    
+                    // Coba alternatif printing ke file jika gagal
+                    try {
+                        string filename = $"receipt_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+                        System.IO.File.WriteAllText(filename, content.ToString());
+                        _logger.LogInformation($"Receipt saved to file {filename} as fallback");
+                        
+                        _logger.LogInformation("=== PRINT RECEIPT END (FALLBACK) ===");
+                        return Json(new { 
+                            success = false, 
+                            message = $"Gagal mencetak struk ke printer. Receipt disimpan ke file {filename}." 
+                        });
+                    }
+                    catch (Exception ex) {
+                        _logger.LogError(ex, "Gagal menyimpan receipt ke file");
+                        _logger.LogInformation("=== PRINT RECEIPT END (ERROR) ===");
+                        return Json(new { success = false, message = "Gagal mencetak struk. Cek status printer." });
+                    }
                 }
                 
+                _logger.LogInformation("=== PRINT RECEIPT END (SUCCESS) ===");
                 return Json(new { success = true, message = "Struk berhasil dicetak" });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error printing receipt for vehicle {VehicleNumber}", vehicleNumber);
-                return Json(new { success = false, message = "Terjadi kesalahan sistem" });
+                return Json(new { success = false, message = $"Terjadi kesalahan sistem: {ex.Message}" });
             }
         }
     }

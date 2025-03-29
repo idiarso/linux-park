@@ -24,12 +24,12 @@ namespace ParkIRC.Controllers
             _logger = logger;
         }
 
-        public async Task<IActionResult> Index(DateTime? startDate = null, DateTime? endDate = null, string? status = null, int page = 1, int pageSize = 10)
+        public async Task<IActionResult> Index(DateTime? startDate = null, DateTime? endDate = null, string? status = null, string? vehicleNumber = null, int page = 1, int pageSize = 10)
         {
             try
             {
-                _logger.LogInformation("Loading History page with startDate: {StartDate}, endDate: {EndDate}, status: {Status}, page: {Page}", 
-                    startDate, endDate, status, page);
+                _logger.LogInformation("Loading History page with startDate: {StartDate}, endDate: {EndDate}, status: {Status}, vehicleNumber: {VehicleNumber}, page: {Page}", 
+                    startDate, endDate, status, vehicleNumber, page);
                 
                 var transactions = _context.ParkingTransactions
                     .Include(t => t.Vehicle)
@@ -38,6 +38,7 @@ namespace ParkIRC.Controllers
 
                 _logger.LogInformation("Initial transactions query created");
 
+                // Filter by date range
                 if (startDate.HasValue)
                 {
                     transactions = transactions.Where(t => t.EntryTime >= startDate.Value);
@@ -48,19 +49,40 @@ namespace ParkIRC.Controllers
                     transactions = transactions.Where(t => t.EntryTime <= endDate.Value.AddDays(1));
                 }
                 
+                // Filter by vehicle number
+                if (!string.IsNullOrEmpty(vehicleNumber))
+                {
+                    // Normalize input to handle variations in format
+                    var normalizedInput = vehicleNumber.Replace(" ", "").ToLower().Trim();
+                    transactions = transactions.Where(t => 
+                        t.Vehicle.VehicleNumber.Replace(" ", "").ToLower().Contains(normalizedInput));
+                    
+                    _logger.LogInformation("Filtering by vehicle number: {VehicleNumber}", vehicleNumber);
+                }
+                
+                // Filter by transaction status
                 if (!string.IsNullOrEmpty(status))
                 {
-                    if (status == "active")
+                    if (status.ToLower() == "terparkir" || status == "active")
                     {
-                        transactions = transactions.Where(t => t.Status == "Active" || t.PaymentStatus == "Pending");
+                        // Vehicles currently parked (no exit time)
+                        transactions = transactions.Where(t => !t.ExitTime.HasValue && t.Status != "Cancelled");
+                        _logger.LogInformation("Filtering for currently parked vehicles");
                     }
-                    else if (status == "completed")
+                    else if (status.ToLower() == "keluar" || status == "completed")
                     {
-                        transactions = transactions.Where(t => t.Status == "Completed" || t.PaymentStatus == "Completed");
+                        // Vehicles that have exited
+                        transactions = transactions.Where(t => t.ExitTime.HasValue && t.Status != "Cancelled");
+                        _logger.LogInformation("Filtering for exited vehicles");
                     }
                     else if (status == "cancelled")
                     {
+                        // Cancelled transactions
                         transactions = transactions.Where(t => t.Status == "Cancelled" || t.PaymentStatus == "Cancelled");
+                    }
+                    else if (status == "all")
+                    {
+                        // No filtering by status
                     }
                 }
 
@@ -77,14 +99,18 @@ namespace ParkIRC.Controllers
                     .Take(pageSize)
                     .Select(t => new ParkingActivityViewModel
                     {
+                        Id = t.Id.ToString(),
                         VehicleNumber = t.Vehicle == null ? "Unknown" : t.Vehicle.VehicleNumber,
+                        VehicleType = t.Vehicle == null ? "Unknown" : t.Vehicle.VehicleType,
+                        ParkingSpace = t.ParkingSpace == null ? "-" : t.ParkingSpace.SpaceNumber,
                         EntryTime = t.EntryTime,
                         ExitTime = t.ExitTime,
                         Duration = t.ExitTime.HasValue ? 
                             $"{(int)(t.ExitTime.Value - t.EntryTime).TotalHours}h {(t.ExitTime.Value - t.EntryTime).Minutes}m" : 
                             "In Progress",
                         Amount = t.TotalAmount,
-                        Status = t.PaymentStatus
+                        Status = t.Status ?? t.PaymentStatus,
+                        PaymentMethod = t.PaymentMethod ?? "-"
                     })
                     .ToListAsync();
 
@@ -92,6 +118,7 @@ namespace ParkIRC.Controllers
 
                 // Store filter data in ViewData for maintaining state
                 ViewData["CurrentFilter"] = status ?? "";
+                ViewData["VehicleNumber"] = vehicleNumber ?? "";
                 ViewData["StartDate"] = startDate;
                 ViewData["EndDate"] = endDate;
                 ViewData["CurrentPage"] = page;

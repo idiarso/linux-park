@@ -56,9 +56,11 @@
                                     <form id="vehicleNumberForm">
                                         <div class="form-group mb-3">
                                             <label for="vehicleNumberInput">Nomor Kendaraan:</label>
-                                            <input type="text" id="vehicleNumberInput" class="form-control form-control-lg" placeholder="B 1234 XYZ">
+                                            <input type="text" id="vehicleNumberInput" class="form-control form-control-lg" 
+                                                   placeholder="Masukkan nomor polisi (cth: R 3112 KI)" autocomplete="off">
+                                            <small class="form-text text-muted">Bisa diisi dengan sebagian atau seluruh nomor polisi. Format tidak harus persis sama.</small>
                                         </div>
-                                        <button type="submit" class="btn btn-primary">
+                                        <button type="submit" class="btn btn-primary btn-lg w-100">
                                             <i class="fas fa-search me-2"></i> Cari Kendaraan
                                         </button>
                                     </form>
@@ -366,13 +368,38 @@
             
             // Function to print receipt
             function printReceipt() {
-                // Get receipt data
-                const ticketNumber = $('#receipt_vehicleNumber').text(); // Using vehicle number as ticket number for now
+                // Get receipt data - perbaiki - gunakan ticketNumber yang benar, bukan vehicleNumber
+                // Perhatikan bahwa ticketNumber tidak ditampilkan di receipt, tapi dikirim dari server saat processBarcodeInput
+                let currentBarcode = $('#barcodeInput').val();
+                if (!currentBarcode) {
+                    currentBarcode = "RECEIPT-" + Date.now(); // Fallback jika barcode tidak ada
+                    console.warn('No barcode found, using fallback: ' + currentBarcode);
+                }
+                
+                const ticketNumber = currentBarcode;
                 const vehicleNumber = $('#receipt_vehicleNumber').text();
                 const entryTime = $('#receipt_entryTime').text();
                 const exitTime = $('#receipt_exitTime').text();
                 const duration = $('#receipt_duration').text();
-                const amount = parseFloat($('#receipt_amount').text().replace(/[.,]/g, ''));
+                // Perbaiki parsing amount - hapus semua karakter non-numerik
+                const amountText = $('#receipt_amount').text().replace(/\D+/g, '');
+                const amount = parseInt(amountText, 10);
+                
+                if (isNaN(amount)) {
+                    showAlert('error', 'Total biaya tidak valid. Tidak dapat mencetak receipt.');
+                    console.error('Invalid amount format:', $('#receipt_amount').text());
+                    return;
+                }
+                
+                console.log('=== PRINT REQUEST START ===');
+                console.log('Data receipt yang akan dicetak:', {
+                    ticketNumber: ticketNumber,
+                    vehicleNumber: vehicleNumber,
+                    entryTime: entryTime,
+                    exitTime: exitTime,
+                    duration: duration,
+                    amount: amount
+                });
                 
                 showLoading('Mencetak receipt...');
                 
@@ -388,17 +415,38 @@
                         duration: duration,
                         amount: amount
                     },
+                    beforeSend: function() {
+                        console.log('Sending print request to server...');
+                    },
                     success: function(response) {
                         hideLoading();
+                        console.log('Print response received:', response);
+                        
                         if (response.success) {
+                            console.log('Print successful');
                             showAlert('success', response.message);
+                            // Tambahkan ke transaksi terakhir
+                            addToRecentTransactions({
+                                vehicleNumber: vehicleNumber,
+                                vehicleType: $('#receipt_vehicleType').text(),
+                                exitTime: exitTime,
+                                amount: amount
+                            });
                         } else {
-                            showAlert('error', response.message);
+                            console.error('Print error:', response.message);
+                            showAlert('error', response.message || 'Gagal mencetak. Cek printer dan coba lagi.');
                         }
+                        console.log('=== PRINT REQUEST END ===');
                     },
-                    error: function() {
+                    error: function(xhr, status, error) {
                         hideLoading();
-                        showAlert('error', 'Terjadi kesalahan sistem');
+                        console.error('AJAX error details:', {
+                            status: status,
+                            error: error,
+                            response: xhr.responseText
+                        });
+                        console.log('=== PRINT REQUEST END (ERROR) ===');
+                        showAlert('error', 'Terjadi kesalahan sistem saat mencoba mencetak. Periksa koneksi printer.');
                     }
                 });
             }
