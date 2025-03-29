@@ -252,34 +252,74 @@ function registerSignalRHandlers() {
 }
 
 function updateDashboardUI(data) {
-    // Update total spaces
-    const totalSpacesEl = document.querySelector('.total-spaces');
-    if (totalSpacesEl) totalSpacesEl.textContent = data.totalSpaces;
+    console.log('Updating dashboard UI with data:', data);
     
-    // Update available spaces
-    const availableSpacesEl = document.querySelector('.available-spaces');
-    if (availableSpacesEl) availableSpacesEl.textContent = data.availableSpaces;
-    
-    // Update occupied spaces
-    const occupiedSpacesEl = document.querySelector('.occupied-spaces');
-    if (occupiedSpacesEl) occupiedSpacesEl.textContent = data.occupiedSpaces;
-    
-    // Update today's revenue
-    const todayRevenueEl = document.querySelector('.today-revenue');
-    if (todayRevenueEl) {
-        const formatter = new Intl.NumberFormat('id-ID');
-        todayRevenueEl.textContent = `Rp ${formatter.format(data.todayRevenue)}`;
+    // Update statistics
+    if (data.stats) {
+        document.querySelector('.total-spaces').textContent = data.stats.totalSpaces;
+        document.querySelector('.available-spaces').textContent = data.stats.availableSpaces;
+        document.querySelector('.occupied-spaces').textContent = data.stats.occupiedSpaces;
+        document.querySelector('.today-revenue').textContent = `Rp ${formatNumber(data.stats.todayRevenue)}`;
+        
+        // Update occupancy rate
+        const occupancyRate = data.stats.totalSpaces > 0 
+            ? Math.round((data.stats.occupiedSpaces / data.stats.totalSpaces) * 100) 
+            : 0;
+        
+        const progressBar = document.querySelector('.progress-bar');
+        if (progressBar) {
+            progressBar.style.width = `${occupancyRate}%`;
+            progressBar.textContent = `${occupancyRate}%`;
+            progressBar.setAttribute('aria-valuenow', occupancyRate);
+            
+            // Update color based on occupancy
+            progressBar.className = progressBar.className.replace(/bg-\w+/, '');
+            if (occupancyRate < 50) {
+                progressBar.classList.add('bg-success');
+            } else if (occupancyRate < 80) {
+                progressBar.classList.add('bg-warning');
+            } else {
+                progressBar.classList.add('bg-danger');
+            }
+        }
     }
     
-    // Update activity table
-    if (data.recentActivities && data.recentActivities.length > 0) {
+    // Update activity table if new activities were provided
+    if (data.activities && data.activities.length > 0) {
         const tbody = document.getElementById('activityTableBody');
         if (tbody) {
-            tbody.innerHTML = data.recentActivities.map(activity => `
-                <tr class="activity-row ${activity.status.toLowerCase()}-activity">
-                    <td>${activity.time}</td>
-                    <td>${activity.vehicleNumber}</td>
-                    <td>${activity.vehicleType}</td>
+            // Get current filter
+            const currentFilter = document.querySelector('.btn-group .btn.active')?.textContent.toLowerCase() || 'all';
+            
+            // Add new activities to the top
+            data.activities.forEach(activity => {
+                // Create new row
+                const row = document.createElement('tr');
+                row.className = `activity-row ${activity.status.toLowerCase()}-activity`;
+                
+                // Set display property based on current filter
+                if (currentFilter !== 'all' && activity.status.toLowerCase() !== currentFilter) {
+                    row.style.display = 'none';
+                }
+                
+                // Fill row with data
+                row.innerHTML = `
+                    <td>${formatTime(activity.entryTime)}</td>
+                    <td>
+                        <strong>${activity.vehicleNumber}</strong>
+                        ${activity.status === 'Entry' 
+                            ? `<br/><small class="text-muted">Ticket: ${activity.ticketNumber}</small>` 
+                            : ''}
+                        ${activity.status === 'Exit' 
+                            ? `<br/><small class="text-muted">Duration: ${activity.duration || '0'} hours</small>` 
+                            : ''}
+                    </td>
+                    <td>
+                        ${activity.vehicleType}
+                        ${activity.spaceNumber 
+                            ? `<br/><small class="text-muted">Space: ${activity.spaceNumber}</small>` 
+                            : ''}
+                    </td>
                     <td>
                         <span class="badge bg-${activity.status === 'Exit' ? 'danger' : 'success'}">
                             ${activity.status}
@@ -290,23 +330,91 @@ function updateDashboardUI(data) {
                             <i class="fas fa-info-circle"></i>
                         </button>
                     </td>
-                </tr>
-            `).join('');
+                `;
+                
+                // Add to top of table
+                if (tbody.firstChild) {
+                    tbody.insertBefore(row, tbody.firstChild);
+                } else {
+                    tbody.appendChild(row);
+                }
+                
+                // Highlight the new row
+                row.classList.add('bg-light');
+                setTimeout(() => {
+                    row.classList.remove('bg-light');
+                }, 3000);
+            });
+            
+            // Limit rows to 10
+            while (tbody.children.length > 10) {
+                tbody.removeChild(tbody.lastChild);
+            }
         }
+    }
+    
+    // Update vehicle distribution chart if provided
+    if (data.vehicleDistribution) {
+        const vehicleChart = window.vehicleChart;
+        if (vehicleChart) {
+            vehicleChart.data.datasets[0].data = [
+                data.vehicleDistribution.carCount || 0,
+                data.vehicleDistribution.motorcycleCount || 0,
+                data.vehicleDistribution.truckCount || 0,
+                data.vehicleDistribution.otherCount || 0
+            ];
+            vehicleChart.update();
+        }
+    }
+    
+    // Play notification sound for important updates
+    if (data.notification) {
+        playSound(data.notification.type || 'info');
+        showToast(data.notification.type || 'info', data.notification.message);
     }
 }
 
+// Helper functions
+function formatNumber(num) {
+    return new Intl.NumberFormat('id-ID').format(num);
+}
+
+function formatTime(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
 function filterActivities(type) {
-    const rows = document.querySelectorAll('.activity-row');
-    if (rows.length === 0) return;
+    const buttons = document.querySelectorAll('.btn-group .btn');
+    buttons.forEach(btn => btn.classList.remove('active'));
     
-    rows.forEach(row => {
-        if (type === 'all' || row.classList.contains(`${type}-activity`)) {
-            row.style.display = '';
+    const clickedButton = document.querySelector(`.btn-group .btn[onclick="filterActivities('${type}')"]`);
+    if (clickedButton) {
+        clickedButton.classList.add('active');
+    }
+    
+    const rows = document.querySelectorAll('.activity-row');
+    
+    if (type === 'all') {
+        rows.forEach(row => row.style.display = '');
+        console.log("Showing all activities");
+    } else {
+        rows.forEach(row => {
+            const isMatchingType = row.classList.contains(`${type}-activity`);
+            row.style.display = isMatchingType ? '' : 'none';
+        });
+        console.log(`Filtered to show only ${type} activities`);
+    }
+    
+    // Update table header to indicate current filter
+    const tableHeader = document.querySelector('.card-header h5');
+    if (tableHeader) {
+        if (type === 'all') {
+            tableHeader.textContent = 'Recent Activities';
         } else {
-            row.style.display = 'none';
+            tableHeader.textContent = `Recent Activities (${type.charAt(0).toUpperCase() + type.slice(1)} Only)`;
         }
-    });
+    }
 }
 
 function addToSimulationLog(message, type = 'info') {
@@ -413,8 +521,51 @@ function showErrorAlert(title, message) {
 window.simulatePushButton = simulatePushButton;
 window.filterActivities = filterActivities;
 window.viewDetails = function(vehicleNumber) {
-    // Navigate to vehicle details page
-    window.location.href = `/Vehicle/Details?vehicleNumber=${encodeURIComponent(vehicleNumber)}`;
+    if (!vehicleNumber) {
+        showToast('error', 'Invalid vehicle number');
+        return;
+    }
+    
+    console.log(`Fetching details for vehicle: ${vehicleNumber}`);
+    
+    // Show loading spinner
+    showToast('info', `Loading details for ${vehicleNumber}...`);
+    
+    // Fetch vehicle details from server
+    fetch(`/Parking/GetVehicleDetails?vehicleNumber=${encodeURIComponent(vehicleNumber)}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.error) {
+                showToast('error', data.error);
+                return;
+            }
+            
+            // Display details in history modal
+            const historyModal = new bootstrap.Modal(document.getElementById('historyModal'));
+            
+            // Set vehicle number in search field
+            const vehicleSearchField = document.getElementById('historyVehicleNumber');
+            if (vehicleSearchField) {
+                vehicleSearchField.value = vehicleNumber;
+                
+                // Trigger search
+                const searchButton = document.querySelector('#historyModal .btn-primary');
+                if (searchButton) {
+                    searchButton.click();
+                }
+            }
+            
+            historyModal.show();
+        })
+        .catch(error => {
+            console.error('Error fetching vehicle details:', error);
+            showToast('error', `Error fetching details: ${error.message}`);
+        });
 };
 
 // Auto switches handlers

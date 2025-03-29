@@ -2131,5 +2131,63 @@ namespace ParkIRC.Controllers
                 throw new InvalidOperationException("HardwareManager not initialized");
             }
         }
+
+        [HttpGet]
+        public async Task<IActionResult> GetVehicleDetails(string vehicleNumber)
+        {
+            if (string.IsNullOrEmpty(vehicleNumber))
+            {
+                return Json(new { error = "No vehicle number provided" });
+            }
+            
+            try
+            {
+                _logger.LogInformation("Fetching details for vehicle: {VehicleNumber}", vehicleNumber);
+                
+                // Get the vehicle information
+                var vehicle = await _context.Vehicles
+                    .FirstOrDefaultAsync(v => v.VehicleNumber == vehicleNumber);
+                    
+                if (vehicle == null)
+                {
+                    _logger.LogWarning("Vehicle not found: {VehicleNumber}", vehicleNumber);
+                    return Json(new { error = "Vehicle not found" });
+                }
+                
+                // Get transactions for this vehicle
+                var transactions = await _context.ParkingTransactions
+                    .Where(t => t.VehicleId == vehicle.Id)
+                    .OrderByDescending(t => t.EntryTime)
+                    .Take(5)
+                    .ToListAsync();
+                    
+                return Json(new { 
+                    vehicle = new {
+                        vehicleNumber = vehicle.VehicleNumber,
+                        vehicleType = vehicle.VehicleType,
+                        isParked = vehicle.IsParked,
+                        entryTime = vehicle.EntryTime,
+                        exitTime = vehicle.ExitTime,
+                        ticketNumber = vehicle.TicketNumber,
+                        parkingSpaceId = vehicle.ParkingSpaceId,
+                        driverName = vehicle.DriverName,
+                        phoneNumber = vehicle.PhoneNumber
+                    },
+                    transactions = transactions.Select(t => new {
+                        transactionNumber = t.TransactionNumber,
+                        entryTime = t.EntryTime,
+                        exitTime = t.ExitTime,
+                        amount = t.TotalAmount,
+                        status = t.Status,
+                        paymentStatus = t.PaymentStatus
+                    }).ToList()
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching vehicle details for {VehicleNumber}", vehicleNumber);
+                return Json(new { error = $"Error fetching vehicle details: {ex.Message}" });
+            }
+        }
     }
 }

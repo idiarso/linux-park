@@ -236,8 +236,27 @@
                                 {
                                     <tr class="activity-row @(activity.Status.ToLower())-activity">
                                         <td>@activity.EntryTime.ToString("HH:mm:ss")</td>
-                                        <td>@activity.VehicleNumber</td>
-                                        <td>@activity.VehicleType</td>
+                                        <td>
+                                            <strong>@activity.VehicleNumber</strong>
+                                            @if (activity.Status == "Entry")
+                                            {
+                                                <br/>
+                                                <small class="text-muted">Ticket: @activity.TicketNumber</small>
+                                            }
+                                            @if (activity.Status == "Exit")
+                                            {
+                                                <br/>
+                                                <small class="text-muted">Duration: @(activity.ExitTime.HasValue ? Math.Round((activity.ExitTime.Value - activity.EntryTime).TotalHours, 1) : 0) hours</small>
+                                            }
+                                        </td>
+                                        <td>
+                                            @activity.VehicleType
+                                            @if (!string.IsNullOrEmpty(activity.ParkingSpace?.SpaceNumber))
+                                            {
+                                                <br/>
+                                                <small class="text-muted">Space: @activity.ParkingSpace?.SpaceNumber</small>
+                                            }
+                                        </td>
                                         <td>
                                             <span class="badge bg-@(activity.Status == "Exit" ? "danger" : "success")">
                                                 @activity.Status
@@ -400,6 +419,9 @@
                 cutout: window.innerWidth < 576 ? '50%' : '60%'
             }
         });
+        
+        // Make chart globally accessible for updates
+        window.vehicleChart = vehicleChart;
 
         // Global functions
         function showVehicleEntryModal() {
