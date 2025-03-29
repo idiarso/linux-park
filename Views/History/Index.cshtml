@@ -1,4 +1,5 @@
 @model IEnumerable<ParkIRC.Models.ParkingActivityViewModel>
+@using ParkIRC.ViewModels
 
 @{
     ViewData["Title"] = "Riwayat Parkir";
@@ -50,40 +51,60 @@
                 <span class="text-info d-none d-sm-block">
                     <i class="fas fa-car me-1"></i> Kendaraan terparkir: @parkedVehicles
                 </span>
-                <a href="@Url.Action("Export")" class="btn btn-success btn-sm">
-                    <i class="fas fa-file-export me-1"></i> Export CSV
+                <a href="@Url.Action("Export", new { startDate = ViewData["StartDate"], endDate = ViewData["EndDate"] })" class="btn btn-sm btn-success">
+                    <i class="fas fa-file-export"></i> Export
                 </a>
             </div>
         </div>
         <div class="card-body">
-            <!-- Filter Form -->
-            <form method="get" class="mb-3">
+            <form id="historyFilterForm" method="get" action="@Url.Action("Index")" class="mb-4">
                 <div class="row g-2">
-                    <div class="col-md-3 col-sm-6">
-                        <label for="searchString" class="form-label small">Nomor Kendaraan</label>
-                        <input type="text" class="form-control form-control-sm" id="searchString" name="searchString" value="@ViewData["CurrentFilter"]" placeholder="Cari nomor kendaraan...">
+                    <div class="col-md-3">
+                        <label class="form-label">Tanggal Mulai</label>
+                        <input type="date" class="form-control form-control-sm" name="startDate" value="@(ViewData["StartDate"] != null ? Convert.ToDateTime(ViewData["StartDate"]).ToString("yyyy-MM-dd") : "")" />
                     </div>
-                    <div class="col-md-2 col-sm-6">
-                        <label for="startDate" class="form-label small">Tanggal Mulai</label>
-                        <input type="date" class="form-control form-control-sm" id="startDate" name="startDate" value="@(ViewData["StartDate"] != null ? Convert.ToDateTime(ViewData["StartDate"]).ToString("yyyy-MM-dd") : "")">
+                    <div class="col-md-3">
+                        <label class="form-label">Tanggal Akhir</label>
+                        <input type="date" class="form-control form-control-sm" name="endDate" value="@(ViewData["EndDate"] != null ? Convert.ToDateTime(ViewData["EndDate"]).ToString("yyyy-MM-dd") : "")" />
                     </div>
-                    <div class="col-md-2 col-sm-6">
-                        <label for="endDate" class="form-label small">Tanggal Akhir</label>
-                        <input type="date" class="form-control form-control-sm" id="endDate" name="endDate" value="@(ViewData["EndDate"] != null ? Convert.ToDateTime(ViewData["EndDate"]).ToString("yyyy-MM-dd") : "")">
-                    </div>
-                    <div class="col-md-3 col-sm-6">
-                        <label for="vehicleType" class="form-label small">Jenis Kendaraan</label>
-                        <select class="form-control form-control-sm" id="vehicleType" name="vehicleType">
-                            <option value="">Semua Jenis</option>
-                            <option value="car" selected="@(currentVehicleType == "car")">Mobil</option>
-                            <option value="motorcycle" selected="@(currentVehicleType == "motorcycle")">Motor</option>
-                            <option value="truck" selected="@(currentVehicleType == "truck")">Truk</option>
+                    <div class="col-md-3">
+                        <label class="form-label">Status</label>
+                        <select class="form-select form-select-sm" name="status" id="statusFilter">
+                            <option value="">Semua Status</option>
+                            @if (ViewData["CurrentFilter"]?.ToString() == "active")
+                            {
+                                <option value="active" selected>Parkir (Aktif)</option>
+                            }
+                            else
+                            {
+                                <option value="active">Parkir (Aktif)</option>
+                            }
+                            
+                            @if (ViewData["CurrentFilter"]?.ToString() == "completed")
+                            {
+                                <option value="completed" selected>Selesai</option>
+                            }
+                            else
+                            {
+                                <option value="completed">Selesai</option>
+                            }
+                            
+                            @if (ViewData["CurrentFilter"]?.ToString() == "cancelled")
+                            {
+                                <option value="cancelled" selected>Dibatalkan</option>
+                            }
+                            else
+                            {
+                                <option value="cancelled">Dibatalkan</option>
+                            }
                         </select>
                     </div>
-                    <div class="col-md-2 col-sm-12 d-flex align-items-end">
-                        <button type="submit" class="btn btn-primary btn-sm w-100">
-                            <i class="fas fa-search me-1"></i> Filter
-                        </button>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <div class="d-grid w-100">
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="fas fa-filter me-1"></i> Filter
+                            </button>
+                        </div>
                     </div>
                 </div>
             </form>
@@ -137,14 +158,11 @@
                                     }
                                 </td>
                                 <td>
-                                    @if (item.Status == "Completed")
-                                    {
-                                        <span class="badge bg-success">Selesai</span>
+                                    @{
+                                        var badgeClass = TransactionStatusType.GetStatusBadgeClass(item.Status);
+                                        var statusText = TransactionStatusType.GetDisplayName(item.Status);
                                     }
-                                    else
-                                    {
-                                        <span class="badge bg-warning text-dark">Parkir</span>
-                                    }
+                                    <span class="badge @badgeClass">@statusText</span>
                                 </td>
                             </tr>
                         }
@@ -171,6 +189,21 @@
                 lengthMenu: [[10, 25, 50, -1], [10, 25, 50, "Semua"]],
                 pageLength: 10
             });
+            
+            // Status filter change event
+            $('#statusFilter').change(function() {
+                if ($(this).val()) {
+                    // Add a visual indicator that the filter is active
+                    $(this).addClass('border-primary');
+                } else {
+                    $(this).removeClass('border-primary');
+                }
+            });
+            
+            // If there's a selected filter, add the visual indicator
+            if ($('#statusFilter').val()) {
+                $('#statusFilter').addClass('border-primary');
+            }
             
             // Adjust table for small screens
             function adjustTableForScreenSize() {

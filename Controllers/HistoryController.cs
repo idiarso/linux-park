@@ -24,12 +24,12 @@ namespace ParkIRC.Controllers
             _logger = logger;
         }
 
-        public async Task<IActionResult> Index(DateTime? startDate = null, DateTime? endDate = null, int page = 1, int pageSize = 10)
+        public async Task<IActionResult> Index(DateTime? startDate = null, DateTime? endDate = null, string? status = null, int page = 1, int pageSize = 10)
         {
             try
             {
-                _logger.LogInformation("Loading History page with startDate: {StartDate}, endDate: {EndDate}, page: {Page}", 
-                    startDate, endDate, page);
+                _logger.LogInformation("Loading History page with startDate: {StartDate}, endDate: {EndDate}, status: {Status}, page: {Page}", 
+                    startDate, endDate, status, page);
                 
                 var transactions = _context.ParkingTransactions
                     .Include(t => t.Vehicle)
@@ -46,6 +46,22 @@ namespace ParkIRC.Controllers
                 if (endDate.HasValue)
                 {
                     transactions = transactions.Where(t => t.EntryTime <= endDate.Value.AddDays(1));
+                }
+                
+                if (!string.IsNullOrEmpty(status))
+                {
+                    if (status == "active")
+                    {
+                        transactions = transactions.Where(t => t.Status == "Active" || t.PaymentStatus == "Pending");
+                    }
+                    else if (status == "completed")
+                    {
+                        transactions = transactions.Where(t => t.Status == "Completed" || t.PaymentStatus == "Completed");
+                    }
+                    else if (status == "cancelled")
+                    {
+                        transactions = transactions.Where(t => t.Status == "Cancelled" || t.PaymentStatus == "Cancelled");
+                    }
                 }
 
                 var totalCount = await transactions.CountAsync();
@@ -75,12 +91,15 @@ namespace ParkIRC.Controllers
                 _logger.LogInformation("Fetched {Count} parking activities for display", parkingActivities.Count);
 
                 // Store filter data in ViewData for maintaining state
-                ViewData["CurrentFilter"] = "";
+                ViewData["CurrentFilter"] = status ?? "";
                 ViewData["StartDate"] = startDate;
                 ViewData["EndDate"] = endDate;
                 ViewData["CurrentPage"] = page;
                 ViewData["TotalPages"] = (int)Math.Ceiling(totalCount / (double)pageSize);
                 ViewData["ParkedVehicles"] = parkedVehicles;
+                
+                // Pass status types using the TransactionStatusType class
+                ViewData["StatusTypes"] = TransactionStatusType.GetStatusTypes();
 
                 return View(parkingActivities);
             }

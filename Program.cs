@@ -173,8 +173,10 @@ try
 
     // Arduino integration services
     builder.Services.Configure<SerialPortOptions>(builder.Configuration.GetSection("Hardware:Arduino"));
+    builder.Services.Configure<ArduinoSettings>(builder.Configuration.GetSection("Hardware:Arduino"));
     builder.Services.AddSingleton<TimeService>();
     builder.Services.AddSingleton<SerialPortService>();
+    builder.Services.AddSingleton<IArduinoService, ArduinoService>();
 
     var app = builder.Build();
 

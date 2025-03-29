@@ -1,0 +1,95 @@
+@{
+    ViewData["Title"] = "Kontrol Arduino";
+}
+
+<div class="container">
+    <h1 class="mb-4">Panel Kontrol Arduino</h1>
+    
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Kontrol Gerbang</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Status Gerbang:</label>
+                        <span id="arduino-status" class="ms-2 fw-bold">Memuat...</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button id="open-gate-btn" class="btn btn-success">
+                            <i class="bi bi-box-arrow-right"></i> Buka Gerbang
+                        </button>
+                        <button id="close-gate-btn" class="btn btn-danger">
+                            <i class="bi bi-box-arrow-in-left"></i> Tutup Gerbang
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Perintah Cetak</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="print-data" class="form-label">Data Cetak:</label>
+                        <textarea id="print-data" class="form-control" rows="3" placeholder="Masukkan teks untuk dicetak..."></textarea>
+                    </div>
+                    <button id="print-btn" class="btn btn-primary">
+                        <i class="bi bi-printer"></i> Kirim Perintah Cetak
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Log Kejadian</h5>
+                </div>
+                <div class="card-body">
+                    <div id="event-log" class="border p-3 bg-light" style="height: 200px; overflow-y: auto;">
+                        <div class="text-secondary">Menunggu kejadian...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/arduino.js"></script>
+    <script>
+        // Script tambahan untuk log kejadian
+        $(function() {
+            // Ini akan terhubung ke SignalR dalam implementasi sebenarnya
+            // untuk log kejadian real-time
+            
+            // Untuk demo, kita akan menambahkan beberapa kejadian palsu
+            setTimeout(() => addEventLog("Sistem diinisialisasi"), 1500);
+            setTimeout(() => addEventLog("Arduino terhubung pada port /dev/ttyUSB0"), 3000);
+        });
+        
+        function addEventLog(message) {
+            const log = document.getElementById('event-log');
+            if (!log) return;
+            
+            const time = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<small class="text-muted">${time}</small> ${message}`;
+            
+            log.appendChild(logEntry);
+            log.scrollTop = log.scrollHeight;
+            
+            // Batasi entri log
+            while (log.children.length > 100) {
+                log.removeChild(log.firstChild);
+            }
+        }
+    </script>
+} 

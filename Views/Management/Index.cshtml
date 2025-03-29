@@ -42,9 +42,12 @@
                         <div class="col-md-4 mb-4">
                             <div class="card h-100">
                                 <div class="card-body">
-                                    <h5 class="card-title">Backup System</h5>
-                                    <p class="card-text">Create backups of your database, uploads, and configuration.</p>
-                                    <a href="@Url.Action("Backup", "Management")" class="btn btn-primary">Manage Backups</a>
+                                    <h5 class="card-title"><i class="fas fa-database me-2"></i>Backup & Restore System</h5>
+                                    <p class="card-text">Buat cadangan dan pulihkan data sistem Anda kapan saja.</p>
+                                    <div class="d-flex gap-2">
+                                        <a href="@Url.Action("Backup", "Management")" class="btn btn-primary">Backup</a>
+                                        <a href="@Url.Action("Restore", "Management")" class="btn btn-warning">Restore</a>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -52,9 +55,9 @@
                         <div class="col-md-4 mb-4">
                             <div class="card h-100">
                                 <div class="card-body">
-                                    <h5 class="card-title">Restore System</h5>
-                                    <p class="card-text">Restore your system from a previous backup.</p>
-                                    <a href="@Url.Action("Restore", "Management")" class="btn btn-warning">Restore System</a>
+                                    <h5 class="card-title"><i class="fas fa-cog me-2"></i>Pengaturan Aplikasi</h5>
+                                    <p class="card-text">Konfigurasi tampilan dan pengaturan umum aplikasi.</p>
+                                    <a href="@Url.Action("ApplicationSettings", "Management")" class="btn btn-success">Pengaturan</a>
                                 </div>
                             </div>
                         </div>
@@ -62,9 +65,9 @@
                         <div class="col-md-4 mb-4">
                             <div class="card h-100">
                                 <div class="card-body">
-                                    <h5 class="card-title">Printer Management</h5>
-                                    <p class="card-text">Configure and test your printer settings.</p>
-                                    <a href="@Url.Action("Printer", "Management")" class="btn btn-success">Manage Printer</a>
+                                    <h5 class="card-title"><i class="fas fa-print me-2"></i>Printer Management</h5>
+                                    <p class="card-text">Konfigurasi dan uji pengaturan printer Anda.</p>
+                                    <a href="@Url.Action("Printer", "Management")" class="btn btn-info">Kelola Printer</a>
                                 </div>
                             </div>
                         </div>
@@ -72,12 +75,14 @@
                         <div class="col-md-4 mb-4">
                             <div class="card h-100">
                                 <div class="card-body">
-                                    <h5 class="card-title">System Status</h5>
-                                    <p class="card-text">Check the status of your system components.</p>
-                                    <a href="@Url.Action("SystemStatus", "Management")" class="btn btn-info">View Status</a>
+                                    <h5 class="card-title"><i class="fas fa-server me-2"></i>System Status</h5>
+                                    <p class="card-text">Periksa status komponen sistem Anda.</p>
+                                    <a href="@Url.Action("SystemStatus", "Management")" class="btn btn-secondary">Lihat Status</a>
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Add more cards here if needed -->
                     </div>
                 </div>
             </div>

@@ -674,3 +674,1013 @@ Example test print:
 ```
 PRINT:TITLE:TEST TICKET\nLINE\nDate: 29-03-2025\nBARCODE:TEST123\nThis is a test
 ```
+
+Berikut adalah perbaikan dan penjelasan dalam bahasa Indonesia:
+
+```c#:Controllers/ArduinoController.cs
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using ParkIRC.Models;
+using ParkIRC.Services;
+using System;
+
+namespace ParkIRC.Controllers
+{
+    /// <summary>
+    /// Controller API untuk komunikasi dengan Arduino
+    /// Menangani perintah untuk membuka/menutup gerbang dan mengirim perintah print
+    /// </summary>
+    [ApiController]
+    [Route("api/[controller]")]
+    public class ArduinoController : ControllerBase
+    {
+        private readonly ILogger<ArduinoController> _logger;
+        private readonly IArduinoService _arduinoService;
+        private readonly IParkingService _parkingService;
+        private readonly IPrinterService _printerService;
+
+        public ArduinoController(
+            ILogger<ArduinoController> logger,
+            IArduinoService arduinoService,
+            IParkingService parkingService,
+            IPrinterService printerService)
+        {
+            _logger = logger;
+            _arduinoService = arduinoService;
+            _parkingService = parkingService;
+            _printerService = printerService;
+            
+            // Mendaftarkan handler event dari Arduino
+            _arduinoService.ArduinoEventReceived += ArduinoService_EventReceived;
+        }
+
+        /// <summary>
+        /// Menangani event yang diterima dari Arduino
+        /// </summary>
+        private async void ArduinoService_EventReceived(object? sender, string eventData)
+        {
+            _logger.LogInformation("Event Arduino diterima: {EventData}", eventData);
+            
+            // Menangani berbagai jenis event
+            if (eventData.StartsWith("EVENT:VEHICLE_DETECTED"))
+            {
+                await HandleVehicleDetected();
+            }
+            else if (eventData.StartsWith("EVENT:BUTTON_PRESS"))
+            {
+                await HandleButtonPress();
+            }
+            else if (eventData.StartsWith("EVENT:VEHICLE_PASSED"))
+            {
+                // Kendaraan telah melewati gerbang
+                _logger.LogInformation("Kendaraan telah melewati gerbang");
+            }
+            else if (eventData.StartsWith("EVENT:GATE_TIMEOUT"))
+            {
+                // Timeout gerbang, gerbang ditutup secara otomatis
+                _logger.LogInformation("Gerbang ditutup otomatis karena timeout");
+            }
+        }
+
+        /// <summary>
+        /// Menangani event ketika kendaraan terdeteksi
+        /// </summary>
+        private async Task HandleVehicleDetected()
+        {
+            try
+            {
+                // Membuat entri parkir baru
+                var vehicleNumber = "TEMP-" + DateTime.Now.ToString("yyyyMMddHHmmss");
+                _logger.LogInformation("Mencoba membuat entri parkir untuk kendaraan: {VehicleNumber}", vehicleNumber);
+                
+                var entry = await _parkingService.CreateEntryAsync(vehicleNumber);
+                
+                if (entry == null)
+                {
+                    _logger.LogError("Gagal membuat entri parkir");
+                    return;
+                }
+                
+                // Mencetak tiket masuk
+                var printResult = await _printerService.PrintEntryTicketAsync(entry);
+                
+                if (!printResult)
+                {
+                    _logger.LogWarning("Gagal mencetak tiket masuk untuk kendaraan: {VehicleNumber}", vehicleNumber);
+                }
+                
+                // Membuka gerbang
+                var gateResult = await _arduinoService.OpenGateAsync();
+                
+                if (!gateResult)
+                {
+                    _logger.LogError("Gagal membuka gerbang untuk kendaraan: {VehicleNumber}", vehicleNumber);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saat menangani deteksi kendaraan");
+            }
+        }
+
+        /// <summary>
+        /// Menangani event ketika tombol ditekan
+        /// </summary>
+        private async Task HandleButtonPress()
+        {
+            try
+            {
+                _logger.LogInformation("Tombol ditekan, membuka gerbang");
+                var result = await _arduinoService.OpenGateAsync();
+                
+                if (!result)
+                {
+                    _logger.LogError("Gagal membuka gerbang saat tombol ditekan");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saat menangani penekanan tombol");
+            }
+        }
+
+        /// <summary>
+        /// Mendapatkan status Arduino dan gerbang
+        /// </summary>
+        [HttpGet("status")]
+        public async Task<IActionResult> GetStatus()
+        {
+            try
+            {
+                // Menginisialisasi koneksi Arduino jika belum
+                if (!await _arduinoService.InitializeAsync())
+                {
+                    _logger.LogError("Gagal menginisialisasi koneksi Arduino");
+                    return StatusCode(503, new { Error = "Koneksi Arduino gagal", Message = "Tidak dapat terhubung ke perangkat Arduino" });
+                }
+                
+                var status = await _arduinoService.GetStatusAsync();
+                
+                if (string.IsNullOrEmpty(status))
+                {
+                    return StatusCode(500, new { Error = "Status tidak tersedia", Message = "Tidak dapat mendapatkan status dari Arduino" });
+                }
+                
+                return Ok(new { Status = status, Timestamp = DateTime.Now });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saat mendapatkan status Arduino");
+                return StatusCode(500, new { Error = "Kesalahan komunikasi", Message = "Error saat berkomunikasi dengan Arduino" });
+            }
+        }
+
+        /// <summary>
+        /// Membuka gerbang parkir
+        /// </summary>
+        [HttpPost("gate/open")]
+        public async Task<IActionResult> OpenGate()
+        {
+            try
+            {
+                if (!await _arduinoService.InitializeAsync())
+                {
+                    _logger.LogError("Gagal menginisialisasi koneksi Arduino");
+                    return StatusCode(503, new { Success = false, Message = "Koneksi Arduino gagal" });
+                }
+                
+                var result = await _arduinoService.OpenGateAsync();
+                
+                if (!result)
+                {
+                    return StatusCode(500, new { Success = false, Message = "Gagal membuka gerbang" });
+                }
+                
+                return Ok(new { Success = true, Message = "Gerbang berhasil dibuka", Timestamp = DateTime.Now });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saat membuka gerbang");
+                return StatusCode(500, new { Success = false, Message = "Error saat berkomunikasi dengan Arduino" });
+            }
+        }
+
+        /// <summary>
+        /// Menutup gerbang parkir
+        /// </summary>
+        [HttpPost("gate/close")]
+        public async Task<IActionResult> CloseGate()
+        {
+            try
+            {
+                if (!await _arduinoService.InitializeAsync())
+                {
+                    _logger.LogError("Gagal menginisialisasi koneksi Arduino");
+                    return StatusCode(503, new { Success = false, Message = "Koneksi Arduino gagal" });
+                }
+                
+                var result = await _arduinoService.CloseGateAsync();
+                
+                if (!result)
+                {
+                    return StatusCode(500, new { Success = false, Message = "Gagal menutup gerbang" });
+                }
+                
+                return Ok(new { Success = true, Message = "Gerbang berhasil ditutup", Timestamp = DateTime.Now });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saat menutup gerbang");
+                return StatusCode(500, new { Success = false, Message = "Error saat berkomunikasi dengan Arduino" });
+            }
+        }
+
+        /// <summary>
+        /// Mengirim perintah cetak ke printer melalui Arduino
+        /// </summary>
+        [HttpPost("print")]
+        public async Task<IActionResult> SendPrintCommand([FromBody] PrintCommandModel model)
+        {
+            try
+            {
+                if (model == null || string.IsNullOrWhiteSpace(model.PrintData))
+                {
+                    return BadRequest(new { Success = false, Message = "Data cetak tidak boleh kosong" });
+                }
+                
+                if (!await _arduinoService.InitializeAsync())
+                {
+                    _logger.LogError("Gagal menginisialisasi koneksi Arduino");
+                    return StatusCode(503, new { Success = false, Message = "Koneksi Arduino gagal" });
+                }
+                
+                var result = await _arduinoService.SendPrintCommandAsync(model.PrintData);
+                
+                if (!result)
+                {
+                    return StatusCode(500, new { Success = false, Message = "Gagal mengirim perintah cetak" });
+                }
+                
+                return Ok(new { Success = true, Message = "Perintah cetak berhasil dikirim", Timestamp = DateTime.Now });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saat mengirim perintah cetak");
+                return StatusCode(500, new { Success = false, Message = "Error saat berkomunikasi dengan Arduino" });
+            }
+        }
+    }
+
+    /// <summary>
+    /// Model untuk mengirim perintah cetak
+    /// </summary>
+    public class PrintCommandModel
+    {
+        public string PrintData { get; set; } = string.Empty;
+    }
+}
+```
+
+```razor:Views/Arduino/Index.cshtml
+@{
+    ViewData["Title"] = "Kontrol Arduino";
+}
+
+<div class="container">
+    <h1 class="mb-4">Panel Kontrol Arduino</h1>
+    
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Kontrol Gerbang</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Status Gerbang:</label>
+                        <span id="arduino-status" class="ms-2 fw-bold">Memuat...</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button id="open-gate-btn" class="btn btn-success">
+                            <i class="bi bi-box-arrow-right"></i> Buka Gerbang
+                        </button>
+                        <button id="close-gate-btn" class="btn btn-danger">
+                            <i class="bi bi-box-arrow-in-left"></i> Tutup Gerbang
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Perintah Cetak</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="print-data" class="form-label">Data Cetak:</label>
+                        <textarea id="print-data" class="form-control" rows="3" placeholder="Masukkan teks untuk dicetak..."></textarea>
+                    </div>
+                    <button id="print-btn" class="btn btn-primary">
+                        <i class="bi bi-printer"></i> Kirim Perintah Cetak
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Log Kejadian</h5>
+                </div>
+                <div class="card-body">
+                    <div id="event-log" class="border p-3 bg-light" style="height: 200px; overflow-y: auto;">
+                        <div class="text-secondary">Menunggu kejadian...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/arduino.js"></script>
+    <script>
+        // Script tambahan untuk log kejadian
+        $(function() {
+            // Ini akan terhubung ke SignalR dalam implementasi sebenarnya
+            // untuk log kejadian real-time
+            
+            // Untuk demo, kita akan menambahkan beberapa kejadian palsu
+            setTimeout(() => addEventLog("Sistem diinisialisasi"), 1500);
+            setTimeout(() => addEventLog("Arduino terhubung pada port /dev/ttyUSB0"), 3000);
+        });
+        
+        function addEventLog(message) {
+            const log = document.getElementById('event-log');
+            if (!log) return;
+            
+            const time = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<small class="text-muted">${time}</small> ${message}`;
+            
+            log.appendChild(logEntry);
+            log.scrollTop = log.scrollHeight;
+            
+            // Batasi entri log
+            while (log.children.length > 100) {
+                log.removeChild(log.firstChild);
+            }
+        }
+    </script>
+}
+```
+
+```javascript:wwwroot/js/arduino.js
+// JavaScript Kontrol Arduino
+// File ini menangani interaksi client-side dengan kontroler Arduino
+
+// Elemen DOM
+let statusElement;
+let openGateBtn;
+let closeGateBtn;
+let printBtn;
+let printDataInput;
+let statusInterval;
+
+// Inisialisasi saat DOM telah sepenuhnya dimuat
+document.addEventListener('DOMContentLoaded', function() {
+    // Inisialisasi elemen DOM
+    statusElement = document.getElementById('arduino-status');
+    openGateBtn = document.getElementById('open-gate-btn');
+    closeGateBtn = document.getElementById('close-gate-btn');
+    printBtn = document.getElementById('print-btn');
+    printDataInput = document.getElementById('print-data');
+
+    // Tambahkan event listener
+    if (openGateBtn) {
+        openGateBtn.addEventListener('click', openGate);
+    }
+    
+    if (closeGateBtn) {
+        closeGateBtn.addEventListener('click', closeGate);
+    }
+    
+    if (printBtn && printDataInput) {
+        printBtn.addEventListener('click', sendPrintCommand);
+    }
+
+    // Mulai polling untuk status
+    getStatus();
+    statusInterval = setInterval(getStatus, 5000); // Polling setiap 5 detik
+});
+
+// Bersihkan saat meninggalkan halaman
+window.addEventListener('beforeunload', function() {
+    if (statusInterval) {
+        clearInterval(statusInterval);
+    }
+});
+
+// Dapatkan status Arduino
+function getStatus() {
+    fetch('/api/arduino/status')
+        .then(response => {
+            if (response.ok) {
+                return response.json();
+            }
+            throw new Error('Gagal mendapatkan status Arduino');
+        })
+        .then(data => {
+            if (statusElement) {
+                statusElement.textContent = data.status || 'Tidak diketahui';
+                statusElement.classList.remove('text-danger', 'text-success');
+                
+                if (data.status && data.status.includes('OPEN')) {
+                    statusElement.classList.add('text-success');
+                } else {
+                    statusElement.classList.add('text-primary');
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            if (statusElement) {
+                statusElement.textContent = 'Kesalahan Koneksi';
+                statusElement.classList.remove('text-success', 'text-primary');
+                statusElement.classList.add('text-danger');
+            }
+        });
+}
+
+// Buka gerbang
+function openGate() {
+    if (openGateBtn) {
+        openGateBtn.disabled = true;
+    }
+    
+    fetch('/api/arduino/gate/open', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json();
+        }
+        throw new Error('Gagal membuka gerbang');
+    })
+    .then(data => {
+        if (data.success) {
+            showToast('Gerbang berhasil dibuka', 'success');
+            // Update status segera
+            getStatus();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Gagal membuka gerbang', 'danger');
+    })
+    .finally(() => {
+        if (openGateBtn) {
+            openGateBtn.disabled = false;
+        }
+    });
+}
+
+// Tutup gerbang
+function closeGate() {
+    if (closeGateBtn) {
+        closeGateBtn.disabled = true;
+    }
+    
+    fetch('/api/arduino/gate/close', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json();
+        }
+        throw new Error('Gagal menutup gerbang');
+    })
+    .then(data => {
+        if (data.success) {
+            showToast('Gerbang berhasil ditutup', 'success');
+            // Update status segera
+            getStatus();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Gagal menutup gerbang', 'danger');
+    })
+    .finally(() => {
+        if (closeGateBtn) {
+            closeGateBtn.disabled = false;
+        }
+    });
+}
+
+// Kirim perintah cetak
+function sendPrintCommand() {
+    if (!printDataInput || !printDataInput.value.trim()) {
+        showToast('Silakan masukkan data untuk dicetak', 'warning');
+        return;
+    }
+    
+    if (printBtn) {
+        printBtn.disabled = true;
+    }
+    
+    const printData = printDataInput.value.trim();
+    
+    fetch('/api/arduino/print', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ printData: printData })
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json();
+        }
+        throw new Error('Gagal mengirim perintah cetak');
+    })
+    .then(data => {
+        if (data.success) {
+            showToast('Perintah cetak berhasil dikirim', 'success');
+            if (printDataInput) {
+                printDataInput.value = '';
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Gagal mengirim perintah cetak', 'danger');
+    })
+    .finally(() => {
+        if (printBtn) {
+            printBtn.disabled = false;
+        }
+    });
+}
+
+// Tampilkan notifikasi toast
+function showToast(message, type) {
+    // Periksa apakah aplikasi memiliki kontainer toast
+    let toastContainer = document.querySelector('.toast-container');
+    
+    if (!toastContainer) {
+        // Buat kontainer toast jika belum ada
+        toastContainer = document.createElement('div');
+        toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        document.body.appendChild(toastContainer);
+    }
+    
+    // Buat elemen toast
+    const toastId = 'toast-' + Date.now();
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type} border-0`;
+    toast.id = toastId;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    
+    // Buat konten toast
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                ${message}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+    `;
+    
+    // Tambahkan toast ke kontainer
+    toastContainer.appendChild(toast);
+    
+    // Inisialisasi dan tampilkan toast
+    const bsToast = new bootstrap.Toast(toast, {
+        autohide: true,
+        delay: 3000
+    });
+    bsToast.show();
+    
+    // Hapus toast dari DOM setelah disembunyikan
+    toast.addEventListener('hidden.bs.toast', function() {
+        toast.remove();
+    });
+}
+```
+
+```c#:Services/ArduinoService.cs
+using System;
+using System.IO.Ports;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Text;
+
+namespace ParkIRC.Services
+{
+    /// <summary>
+    /// Pengaturan untuk koneksi Arduino
+    /// </summary>
+    public class ArduinoSettings
+    {
+        public string PortName { get; set; } = string.Empty;
+        public int BaudRate { get; set; } = 9600;
+        public int DataBits { get; set; } = 8;
+        public Parity Parity { get; set; } = Parity.None;
+        public StopBits StopBits { get; set; } = StopBits.One;
+    }
+
+    /// <summary>
+    /// Interface untuk layanan Arduino
+    /// </summary>
+    public interface IArduinoService
+    {
+        Task<bool> InitializeAsync();
+        Task<bool> OpenGateAsync();
+        Task<bool> CloseGateAsync();
+        Task<string> GetStatusAsync();
+        Task<bool> SendPrintCommandAsync(string printData);
+        event EventHandler<string> ArduinoEventReceived;
+    }
+
+    /// <summary>
+    /// Implementasi layanan Arduino untuk komunikasi dengan perangkat Arduino
+    /// </summary>
+    public class ArduinoService : IArduinoService, IDisposable
+    {
+        private readonly ILogger<ArduinoService> _logger;
+        private readonly ArduinoSettings _settings;
+        private SerialPort? _serialPort;
+        private bool _isInitialized = false;
+        private readonly StringBuilder _dataBuffer = new StringBuilder();
+        private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
+
+        public event EventHandler<string>? ArduinoEventReceived;
+
+        public ArduinoService(ILogger<ArduinoService> logger, IOptions<ArduinoSettings> settings)
+        {
+            _logger = logger;
+            _settings = settings.Value;
+        }
+
+        /// <summary>
+        /// Menginisialisasi koneksi Arduino
+        /// </summary>
+        public async Task<bool> InitializeAsync()
+        {
+            try
+            {
+                await _semaphore.WaitAsync();
+                
+                if (_isInitialized)
+                {
+                    return true;
+                }
+
+                _logger.LogInformation("Mencoba menghubungkan ke Arduino pada port {PortName}", _settings.PortName);
+
+                _serialPort = new SerialPort(
+                    _settings.PortName,
+                    _settings.BaudRate,
+                    _settings.Parity,
+                    _settings.DataBits,
+                    _settings.StopBits
+                );
+
+                _serialPort.DataReceived += SerialPort_DataReceived;
+                _serialPort.Open();
+
+                // Tunggu sinyal siap dari Arduino
+                _logger.LogInformation("Menunggu sinyal siap dari Arduino");
+                var readyTask = WaitForResponseAsync("READY:", TimeSpan.FromSeconds(5));
+                if (!await readyTask)
+                {
+                    _logger.LogError("Arduino tidak merespon dengan sinyal siap");
+                    _serialPort.Close();
+                    return false;
+                }
+
+                _isInitialized = true;
+                _logger.LogInformation("Koneksi Arduino berhasil diinisialisasi pada port {PortName}", _settings.PortName);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Gagal menginisialisasi koneksi Arduino");
+                return false;
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+        }
+
+        /// <summary>
+        /// Membuka gerbang
+        /// </summary>
+        public async Task<bool> OpenGateAsync()
+        {
+            _logger.LogInformation("Mencoba membuka gerbang");
+            return await SendCommandAsync("OPEN");
+        }
+
+        /// <summary>
+        /// Menutup gerbang
+        /// </summary>
+        public async Task<bool> CloseGateAsync()
+        {
+            _logger.LogInformation("Mencoba menutup gerbang");
+            return await SendCommandAsync("CLOSE");
+        }
+
+        /// <summary>
+        /// Mendapatkan status Arduino dan gerbang
+        /// </summary>
+        public async Task<string> GetStatusAsync()
+        {
+            if (!await EnsureInitializedAsync())
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                await _semaphore.WaitAsync();
+                
+                _dataBuffer.Clear();
+                _serialPort!.WriteLine("STATUS");
+                
+                _logger.LogInformation("Menunggu respons status dari Arduino");
+                var response = await ReadLineWithTimeoutAsync(TimeSpan.FromSeconds(3));
+                if (string.IsNullOrEmpty(response))
+                {
+                    _logger.LogWarning("Tidak ada respons status diterima dari Arduino");
+                    return string.Empty;
+                }
+
+                _logger.LogInformation("Status Arduino: {Status}", response);
+                return response;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saat mendapatkan status Arduino");
+                return string.Empty;
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+        }
+
+        /// <summary>
+        /// Mengirim perintah cetak ke Arduino
+        /// </summary>
+        public async Task<bool> SendPrintCommandAsync(string printData)
+        {
+            _logger.LogInformation("Mengirim perintah cetak dengan data: {PrintDataLength} karakter", printData.Length);
+            return await SendCommandAsync($"PRINT:{printData}");
+        }
+
+        /// <summary>
+        /// Mengirim perintah ke Arduino dan menunggu respons
+        /// </summary>
+        private async Task<bool> SendCommandAsync(string command)
+        {
+            if (!await EnsureInitializedAsync())
+            {
+                return false;
+            }
+
+            try
+            {
+                await _semaphore.WaitAsync();
+                
+                _dataBuffer.Clear();
+                _serialPort!.WriteLine(command);
+                
+                _logger.LogInformation("Perintah dikirim: {Command}, menunggu respons", command);
+                
+                var response = await ReadLineWithTimeoutAsync(TimeSpan.FromSeconds(3));
+                
+                var result = response != null && response.StartsWith("OK:");
+                _logger.LogInformation("Respons diterima: {Response}, hasil: {Result}", response, result ? "Berhasil" : "Gagal");
+                
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saat mengirim perintah {Command} ke Arduino", command);
+                return false;
+            }
+            finally
+            {
+                _semaphore.Release();
+            }
+        }
+
+        /// <summary>
+        /// Memastikan koneksi Arduino sudah diinisialisasi
+        /// </summary>
+        private async Task<bool> EnsureInitializedAsync()
+        {
+            if (!_isInitialized)
+            {
+                _logger.LogInformation("Koneksi Arduino belum diinisialisasi, mencoba inisialisasi");
+                return await InitializeAsync();
+            }
+            return _isInitialized;
+        }
+
+        /// <summary>
+        /// Menunggu respons yang diawali dengan prefix tertentu dari Arduino
+        /// </summary>
+        private async Task<bool> WaitForResponseAsync(string expectedPrefix, TimeSpan timeout)
+        {
+            var startTime = DateTime.Now;
+            
+            while (DateTime.Now - startTime < timeout)
+            {
+                var response = await ReadLineWithTimeoutAsync(TimeSpan.FromMilliseconds(500));
+                
+                if (!string.IsNullOrEmpty(response) && response.StartsWith(expectedPrefix))
+                {
+                    _logger.LogInformation("Respons yang diharapkan diterima: {Response}", response);
+                    return true;
+                }
+                
+                await Task.Delay(100);
+            }
+            
+            _logger.LogWarning("Timeout menunggu respons dengan awalan: {ExpectedPrefix}", expectedPrefix);
+            return false;
+        }
+
+        /// <summary>
+        /// Membaca baris data dari buffer dengan timeout
+        /// </summary>
+        private async Task<string> ReadLineWithTimeoutAsync(TimeSpan timeout)
+        {
+            var startTime = DateTime.Now;
+            
+            while (DateTime.Now - startTime < timeout)
+            {
+                if (_dataBuffer.Length > 0 && _dataBuffer.ToString().Contains('\n'))
+                {
+                    var bufferStr = _dataBuffer.ToString();
+                    var lineEnd = bufferStr.IndexOf('\n');
+                    
+                    if (lineEnd >= 0)
+                    {
+                        var line = bufferStr.Substring(0, lineEnd).Trim();
+                        _dataBuffer.Remove(0, lineEnd + 1);
+                        return line;
+                    }
+                }
+                
+                await Task.Delay(10);
+            }
+            
+            return string.Empty;
+        }
+
+        /// <summary>
+        /// Handler event data diterima dari port serial
+        /// </summary>
+        private void SerialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
+        {
+            if (_serialPort == null || !_serialPort.IsOpen)
+                return;
+
+            try
+            {
+                string data = _serialPort.ReadExisting();
+                _dataBuffer.Append(data);
+
+                // Periksa notifikasi event dari Arduino
+                var bufferStr = _dataBuffer.ToString();
+                var lines = bufferStr.Split('\n');
+                
+                if (lines.Length > 1)
+                {
+                    for (int i = 0; i < lines.Length - 1; i++)
+                    {
+                        var line = lines[i].Trim();
+                        
+                        if (line.StartsWith("EVENT:"))
+                        {
+                            _logger.LogInformation("Event diterima dari Arduino: {Event}", line);
+                            OnArduinoEvent(line);
+                        }
+                    }
+                    
+                    // Simpan baris yang belum lengkap di buffer
+                    _dataBuffer.Clear();
+                    _dataBuffer.Append(lines[lines.Length - 1]);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saat membaca data dari Arduino");
+            }
+        }
+
+        /// <summary>
+        /// Memicu event ketika ada notifikasi dari Arduino
+        /// </summary>
+        private void OnArduinoEvent(string eventData)
+        {
+            ArduinoEventReceived?.Invoke(this, eventData);
+        }
+
+        /// <summary>
+        /// Membersihkan resource
+        /// </summary>
+        public void Dispose()
+        {
+            if (_serialPort != null && _serialPort.IsOpen)
+            {
+                try
+                {
+                    _logger.LogInformation("Menutup koneksi serial port Arduino");
+                    _serialPort.Close();
+                    _serialPort.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error saat menutup port serial Arduino");
+                }
+            }
+            
+            _semaphore.Dispose();
+        }
+    }
+}
+```
+Untuk mengkompilasi dan menjalankan aplikasi Arduino pada .NET, ikuti langkah-langkah berikut:
+
+1. **Persiapan Lingkungan**
+   - Pastikan .NET SDK (minimal versi 6.0) sudah terpasang di sistem Anda:
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y dotnet-sdk-6.0
+   ```
+
+   - Pasang paket pendukung yang diperlukan:
+   ```bash
+   sudo apt-get install -y libgdiplus libc6-dev
+   ```
+
+   - Tambahkan pengguna ke grup dialout agar bisa mengakses port serial:
+   ```bash
+   sudo usermod -a -G dialout $USER
+   sudo chmod a+rw /dev/ttyUSB0  # Sesuaikan dengan port Arduino Anda
+   ```
+
+2. **Kompilasi Aplikasi**
+   - Masuk ke direktori proyek:
+   ```bash
+   cd /home/tekno/Desktop/AAA/parkir28Mar
+   ```
+   
+   - Kompilasi proyek:
+   ```bash
+   dotnet build
+   ```
+
+3. **Jalankan Aplikasi**
+   - Mode pengembangan:
+   ```bash
+   dotnet run
+   ```
+   
+   - Atau build versi rilis:
+   ```bash
+   dotnet publish -c Release -o ./publish
+   cd ./publish
+   dotnet ParkIRC.dll
+   ```
+
+4. **Akses Aplikasi**
+   - Buka browser dan akses: http://localhost:5050/Arduino
+   - Pastikan Arduino sudah terhubung ke port yang dikonfigurasi di appsettings.json
+
+5. **Konfigurasi Arduino**
+   - Pastikan file sketch Arduino (`GateController.ino`) sudah diupload ke board Arduino
+   - Periksa port serial di `appsettings.json` (biasanya `/dev/ttyUSB0` atau `/dev/ttyACM0`)
+
+Integrasi Arduino ini telah dilengkapi dengan dukungan bahasa Indonesia dan peningkatan error handling untuk memudahkan penggunaan dan pemeliharaan sistem parkir Anda.
