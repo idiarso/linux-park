@@ -486,6 +486,10 @@ model Vehicles {
   ExitGateId          String
   ParkingFee          Decimal?              @db.Decimal
   UpdatedAt           DateTime?             @db.Timestamp(6)
+  is_lost             Boolean?              @default(false)
+  is_paid             Boolean?              @default(false)
+  is_valid            Boolean?              @default(true)
+  is_parked           Boolean?              @default(true)
   ParkingSpaces       ParkingSpaces?
   ParkingTickets      ParkingTickets[]
   ParkingTransactions ParkingTransactions[]
@@ -528,4 +532,32 @@ model parking_settings {
   last_updated               DateTime? @db.Timestamp(6)
   updated_by                 String?
   postgres_connection_string String?
+}
+
+model CaptureTickets {
+  Id           Int       @id @default(autoincrement())
+  TicketNumber String    @db.VarChar(50)
+  ImagePath    String    @db.VarChar(255)
+  Timestamp    DateTime  @default(now()) @db.Timestamp(6)
+  Status       String    @default("masuk") @db.VarChar(10)
+  VehicleType  String?   @db.VarChar(20)
+  PlateNumber  String?   @db.VarChar(15)
+  ExitTimestamp DateTime? @db.Timestamp(6)
+}
+
+model VehicleExit {
+  Id            Int      @id @default(autoincrement())
+  TicketNumber  String   @db.VarChar(50)
+  VehicleNumber String?  @db.VarChar(20)
+  ExitTime      DateTime @default(now()) @db.Timestamp(6)
+  PrintCount    Int?     @default(0)
+  OperatorId    String?  @db.VarChar(50)
+  Notes         String?
+}
+
+model EFMigrationsHistory {
+  MigrationId    String @id(map: "PK___EFMigrationsHistory") @db.VarChar(150)
+  ProductVersion String @db.VarChar(32)
+
+  @@map("__EFMigrationsHistory")
 }

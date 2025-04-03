@@ -37,6 +37,7 @@ namespace ParkIRC.Data
         public DbSet<Camera> Cameras { get; set; }
         public DbSet<GateEvent> GateEvents { get; set; }
         public DbSet<PendingVehicleEntry> PendingVehicleEntries { get; set; }
+        public DbSet<CaptureTicket> CaptureTickets { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {

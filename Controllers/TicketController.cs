@@ -2,140 +2,111 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using ParkIRC.Data;
 using ParkIRC.Models;
-using ParkIRC.Services;
-using Microsoft.AspNetCore.Authorization;
 using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using System.Linq;
-using System.Collections.Generic;
+using Microsoft.AspNetCore.Authorization;
 
 namespace ParkIRC.Controllers
 {
     [Authorize]
-    public class TicketController : Controller
+    [ApiController]
+    [Route("api/[controller]")]
+    public class TicketController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
-        private readonly IPrinterService _printerService;
         private readonly ILogger<TicketController> _logger;
 
-        public TicketController(ApplicationDbContext context, IPrinterService printerService, ILogger<TicketController> logger)
+        public TicketController(ApplicationDbContext context, ILogger<TicketController> logger)
         {
             _context = context;
-            _printerService = printerService;
             _logger = logger;
         }
 
-        public async Task<IActionResult> PrintTicket()
+        // GET /api/tickets/{ticketNumber}
+        [HttpGet("{ticketNumber}")]
+        public async Task<IActionResult> GetTicket(string ticketNumber)
         {
-            // Get list of active vehicles for dropdown
-            var activeVehicles = await _context.Vehicles
-                .Where(v => v.IsParked)
-                .OrderBy(v => v.VehicleNumber)
-                .Select(v => new { v.VehicleNumber, v.VehicleType })
-                .ToListAsync();
-            
-            ViewBag.ActiveVehicles = activeVehicles;
-            
-            return View();
-        }
-
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public async Task<IActionResult> PrintTicket(string vehicleNumber)
-        {
-            if (string.IsNullOrEmpty(vehicleNumber))
-            {
-                return Json(new { success = false, message = "Nomor kendaraan wajib diisi" });
-            }
-
             try
             {
-                // Find the vehicle
-                var vehicle = await _context.Vehicles
-                    .Where(v => v.VehicleNumber == vehicleNumber && v.IsParked)
-                    .Include(v => v.ParkingSpace)
-                    .FirstOrDefaultAsync();
+                var ticket = await _context.CaptureTickets
+                    .FirstOrDefaultAsync(t => t.TicketNumber == ticketNumber);
 
-                if (vehicle == null)
+                if (ticket == null)
                 {
-                    _logger.LogWarning("Vehicle not found or not parked: {VehicleNumber}", vehicleNumber);
-                    return Json(new { success = false, message = "Kendaraan tidak ditemukan atau tidak sedang parkir" });
+                    return NotFound(new { message = "Tiket tidak ditemukan" });
                 }
 
-                // Find the latest transaction for this vehicle
-                var transaction = await _context.ParkingTransactions
-                    .Where(t => t.Vehicle != null && t.Vehicle.Id == vehicle.Id && t.ExitTime == null)
-                    .OrderByDescending(t => t.EntryTime)
-                    .FirstOrDefaultAsync();
+                return Ok(ticket);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting ticket {TicketNumber}", ticketNumber);
+                return StatusCode(500, new { message = "Terjadi kesalahan saat mengambil data tiket" });
+            }
+        }
 
-                if (transaction == null)
+        // POST /api/tickets/validate
+        [HttpPost("validate")]
+        public async Task<IActionResult> ValidateTicket([FromBody] ValidateTicketRequest request)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(request.TicketNumber))
                 {
-                    _logger.LogWarning("Active transaction not found for vehicle: {VehicleNumber}", vehicleNumber);
-                    return Json(new { success = false, message = "Transaksi aktif tidak ditemukan untuk kendaraan ini" });
+                    return BadRequest(new { message = "Nomor tiket tidak boleh kosong" });
                 }
 
-                // Create a ticket model
-                var ticket = new ParkingTicket
-                {
-                    TicketNumber = transaction.TicketNumber ?? transaction.TransactionNumber,
-                    VehicleNumber = vehicle.VehicleNumber,
-                    EntryTime = transaction.EntryTime,
-                    ParkingSpaceNumber = vehicle.ParkingSpace?.SpaceNumber ?? "General",
-                    VehicleType = vehicle.VehicleType ?? "Unknown",
-                    // Add additional required properties for database validation
-                    BarcodeData = transaction.TransactionNumber,
-                    IssueTime = DateTime.Now,
-                    ShiftId = 1 // Default value
-                };
+                var ticket = await _context.CaptureTickets
+                    .FirstOrDefaultAsync(t => t.TicketNumber == request.TicketNumber);
 
-                // Format ticket content
-                var ticketContent = $"TIKET PARKIR\n==============\nNo. Tiket: {ticket.TicketNumber}\nNo. Kendaraan: {ticket.VehicleNumber}\nWaktu Masuk: {ticket.EntryTime:yyyy-MM-dd HH:mm:ss}\nTipe Kendaraan: {ticket.VehicleType}\nLokasi: {ticket.ParkingSpaceNumber}\n\n";
-                
-                // Print ticket
-                var success = await _printerService.PrintTicket(ticketContent);
-                if (!success)
+                if (ticket == null)
                 {
-                    _logger.LogError("Failed to print ticket {TicketNumber}", ticket.TicketNumber);
-                    return Json(new { success = false, message = "Gagal mencetak tiket. Periksa printer Anda." });
+                    return NotFound(new { message = "Tiket tidak ditemukan" });
                 }
-                
-                _logger.LogInformation("Ticket printed successfully: {TicketNumber} for vehicle {VehicleNumber}", 
-                    ticket.TicketNumber, ticket.VehicleNumber);
-                
-                return Json(new { 
-                    success = true, 
-                    message = "Tiket berhasil dicetak",
-                    ticketNumber = ticket.TicketNumber,
-                    vehicleNumber = ticket.VehicleNumber,
-                    entryTime = ticket.EntryTime.ToString("yyyy-MM-dd HH:mm:ss"),
-                    parkingSpace = ticket.ParkingSpaceNumber
+
+                if (ticket.Status == "keluar")
+                {
+                    return BadRequest(new { message = "Tiket sudah digunakan" });
+                }
+
+                return Ok(new { isValid = true, ticket });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating ticket {TicketNumber}", request.TicketNumber);
+                return StatusCode(500, new { message = "Terjadi kesalahan saat memvalidasi tiket" });
+            }
+        }
+
+        // PUT /api/tickets/{ticketNumber}/exit
+        [HttpPut("{ticketNumber}/exit")]
+        public async Task<IActionResult> UpdateExitStatus(string ticketNumber)
+        {
+            try
+            {
+                var ticket = await _context.CaptureTickets
+                    .FirstOrDefaultAsync(t => t.TicketNumber == ticketNumber);
+
+                if (ticket == null)
+                {
+                    return NotFound(new { message = "Tiket tidak ditemukan" });
+                }
+
+                ticket.Status = "keluar";
+                ticket.ExitTimestamp = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { 
+                    message = "Status tiket berhasil diupdate",
+                    ticket 
                 });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error printing ticket for vehicle {VehicleNumber}", vehicleNumber);
-                return Json(new { success = false, message = $"Error: {ex.Message}" });
-            }
-        }
-        
-        [HttpGet]
-        public async Task<IActionResult> GetActiveVehicles()
-        {
-            try
-            {
-                var vehicles = await _context.Vehicles
-                    .Where(v => v.IsParked)
-                    .OrderBy(v => v.VehicleNumber)
-                    .Select(v => new { v.VehicleNumber, v.VehicleType })
-                    .ToListAsync();
-                
-                return Json(vehicles);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting active vehicles");
-                return Json(new List<object>());
+                _logger.LogError(ex, "Error updating exit status for ticket {TicketNumber}", ticketNumber);
+                return StatusCode(500, new { message = "Terjadi kesalahan saat mengupdate status tiket" });
             }
         }
     }

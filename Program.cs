@@ -21,6 +21,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using System.Text.Json;
 using ParkIRC.Hardware;
+using System.Text;
+using System.IO;
 
 // Configurar comportamiento legacy de timestamps para Npgsql
 // Esto permite usar DateTime locales con PostgreSQL
@@ -363,6 +365,51 @@ try
 
     // Add health checks
     app.MapHealthChecks("/health");
+
+    // Add request logging middleware
+    app.Use(async (context, next) =>
+    {
+        // Enable buffering so we can read the request body multiple times
+        context.Request.EnableBuffering();
+        
+        // Clone the body stream
+        var originalBody = context.Request.Body;
+        using var requestReader = new StreamReader(
+            context.Request.Body,
+            encoding: Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: false,
+            leaveOpen: true);
+        
+        var requestBody = await requestReader.ReadToEndAsync();
+        context.Request.Body.Position = 0;  // Reset for downstream middleware
+        
+        // Log the request
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        logger.LogInformation(
+            $"REQUEST [{context.Request.Method}] {context.Request.Path} - Body: {requestBody}");
+        
+        // Capture the response
+        var originalResponseBody = context.Response.Body;
+        using var responseMS = new MemoryStream();
+        context.Response.Body = responseMS;
+        
+        // Continue processing
+        await next.Invoke();
+        
+        // Log the response
+        responseMS.Seek(0, SeekOrigin.Begin);
+        var responseBody = await new StreamReader(responseMS).ReadToEndAsync();
+        logger.LogInformation(
+            $"RESPONSE [{context.Response.StatusCode}] {context.Request.Path} - Body: {responseBody}");
+        
+        // Copy back to the original stream
+        responseMS.Seek(0, SeekOrigin.Begin);
+        await responseMS.CopyToAsync(originalResponseBody);
+    });
+
+    // Log the URLs the application is listening on
+    var urls = app.Urls;
+    logger.Info($"Application starting on URLs: {string.Join(", ", urls)}");
 
     app.Run();
 }

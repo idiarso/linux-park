@@ -13,11 +13,11 @@ namespace ParkIRC.Models
             Transactions = new List<ParkingTransaction>();
             
             // Initialize required string properties
-            VehicleNumber = string.Empty;
+            VehicleNumber = "UNKNOWN";
             VehicleType = string.Empty;
             TicketNumber = string.Empty;
             CreatedBy = string.Empty;
-            PlateNumber = string.Empty;
+            PlateNumber = "UNKNOWN";
             Status = "Active";
             ExternalSystemId = string.Empty;
             EntryGateId = string.Empty;
@@ -26,7 +26,6 @@ namespace ParkIRC.Models
         
         public int Id { get; set; }
         
-        [Required(ErrorMessage = "Nomor kendaraan wajib diisi")]
         public string VehicleNumber { get; set; }
         
         [Required(ErrorMessage = "Tipe kendaraan wajib diisi")]
@@ -68,7 +67,6 @@ namespace ParkIRC.Models
         
         public bool IsActive { get; set; } = true;
 
-        [Required]
         public string PlateNumber { get; set; }
         
         [Required]

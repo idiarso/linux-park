@@ -207,14 +207,17 @@ namespace ParkIRC.Controllers
                 _logger.LogInformation("Processing vehicle entry: {VehicleNumber}, Type: {VehicleType}",
                     model.VehicleNumber, model.VehicleType);
 
-                // Check if vehicle is already parked
-                var existingVehicle = await _context.Vehicles
-                    .FirstOrDefaultAsync(v => v.VehicleNumber == model.VehicleNumber && v.IsParked);
-
-                if (existingVehicle != null)
+                // Check if vehicle is already parked (only if vehicle number is provided)
+                if (!string.IsNullOrEmpty(model.VehicleNumber))
                 {
-                    _logger.LogWarning("Vehicle already parked: {VehicleNumber}", model.VehicleNumber);
-                    return Json(new { success = false, message = "Kendaraan sudah terparkir" });
+                    var existingVehicle = await _context.Vehicles
+                        .FirstOrDefaultAsync(v => v.VehicleNumber == model.VehicleNumber && v.IsParked);
+
+                    if (existingVehicle != null)
+                    {
+                        _logger.LogWarning("Vehicle already parked: {VehicleNumber}", model.VehicleNumber);
+                        return Json(new { success = false, message = "Kendaraan sudah terparkir" });
+                    }
                 }
 
                 // Generate ticket number
@@ -223,19 +226,17 @@ namespace ParkIRC.Controllers
                 // Create vehicle record with minimal information
                 var vehicle = new Vehicle
                 {
-                    VehicleNumber = model.VehicleNumber,
+                    VehicleNumber = model.VehicleNumber ?? "UNKNOWN",
                     VehicleType = model.VehicleType,
                     DriverName = model.DriverName,
                     PhoneNumber = model.PhoneNumber,
-                    EntryImagePath = model.EntryImagePath,
                     IsParked = true,
                     EntryTime = DateTime.Now,
-                    Status = "Active",
-                    TicketNumber = ticketNumber,
+                    EntryImagePath = model.EntryImagePath,
                     CreatedBy = User.Identity?.Name ?? "System",
-                    PlateNumber = model.VehicleNumber,
-                    EntryGateId = "MAIN",
-                    ExternalSystemId = $"WEB-{DateTime.Now:yyyyMMddHHmmss}"
+                    TicketNumber = ticketNumber,
+                    Status = "Active",
+                    PlateNumber = model.VehicleNumber ?? "UNKNOWN"
                 };
 
                 _logger.LogInformation("Created vehicle object with ticket: {TicketNumber}", ticketNumber);

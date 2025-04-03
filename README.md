@@ -503,3 +503,6 @@ echo "\dt" | psql -U postgres -d parkir2
 dotnet build ParkIRC.csproj && dotnet run --project ParkIRC.csproj
 
  pkill -f "dotnet" && dotnet run
+
+
+ python3 parkir_api.py
